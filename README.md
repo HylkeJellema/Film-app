@@ -176,8 +176,19 @@ Requires JDK 17+ and an Android SDK with platform 35. Release builds are signed 
 they install without extra setup — replace `signingConfig` in `app/build.gradle.kts` before
 distributing anything.
 
-Install over USB with `adb install -r app/build/outputs/apk/debug/app-debug.apk`, or grab the APK
-from the **Build APK** GitHub Actions run.
+### Getting the APK onto a phone
+
+Every push publishes both APKs to the rolling **`apk-dev`** prerelease, so you can download and
+install straight from the phone's browser:
+
+<https://github.com/HylkeJellema/Film-app/releases/tag/apk-dev>
+
+Install **`kickercam-debug.apk`**. It is unminified, so nothing R8 could have stripped from the
+bundled ML models; `kickercam-release.apk` is a third of the size but minified and unverified on
+hardware. Both are signed with the standard Android debug key — personal sideloading, not
+distribution. Enable "install unknown apps" for your browser first.
+
+Over USB instead: `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
 
 ### Layout
 

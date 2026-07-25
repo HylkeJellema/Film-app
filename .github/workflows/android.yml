@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -46,3 +48,42 @@ jobs:
           name: unit-test-report
           path: app/build/reports/tests/testDebugUnitTest
           if-no-files-found: ignore
+
+      # Publishes the APKs to a rolling prerelease so they can be downloaded straight onto a phone.
+      # Done here rather than committing binaries: the debug APK is over GitHub's 100 MB file limit.
+      - name: Publish APKs to a rolling prerelease
+        if: github.event_name == 'push' && !startsWith(github.ref, 'refs/pull/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: apk-dev
+        run: |
+          set -euo pipefail
+          cp app/build/outputs/apk/debug/app-debug.apk kickercam-debug.apk
+          cp app/build/outputs/apk/release/app-release.apk kickercam-release.apk
+
+          {
+            echo "Development build of KickerCam from \`${GITHUB_REF_NAME}\` @ \`${GITHUB_SHA:0:7}\`."
+            echo
+            echo "**Install \`kickercam-debug.apk\`.** It is unminified, so nothing R8 could have"
+            echo "stripped from the bundled ML Kit models. \`kickercam-release.apk\` is smaller but"
+            echo "minified and has not been verified on a device."
+            echo
+            echo "arm64 only, Android 10+. Enable \"install unknown apps\" for your browser, then grant"
+            echo "Camera (required) and Microphone (optional — without it clips are silent)."
+            echo
+            echo "Both APKs are signed with the standard Android **debug** key, so they are for personal"
+            echo "sideloading, not distribution."
+          } > notes.md
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md --target "$GITHUB_SHA"
+            gh release upload "$TAG" kickercam-debug.apk kickercam-release.apk --clobber
+          else
+            gh release create "$TAG" kickercam-debug.apk kickercam-release.apk \
+              --title "KickerCam dev build" \
+              --notes-file notes.md \
+              --prerelease \
+              --target "$GITHUB_SHA"
+          fi
+
+          echo "Download: $(gh release view "$TAG" --json url --jq .url)" >> "$GITHUB_STEP_SUMMARY"
