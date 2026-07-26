@@ -126,9 +126,16 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     val exportMessage: StateFlow<String?> = _exportMessage.asStateFlow()
 
     fun exportClip(clip: Clip) {
+        val again = clip.meta.exported
         viewModelScope.launch {
             repository.exportToMovies(clip)
-                .onSuccess { _exportMessage.value = "Saved to Movies/KickerCam" }
+                .onSuccess {
+                    _exportMessage.value = if (again) {
+                        "Saved to Movies/KickerCam again"
+                    } else {
+                        "Saved to Movies/KickerCam"
+                    }
+                }
                 .onFailure { _exportMessage.value = "Export failed: ${it.message}" }
         }
     }

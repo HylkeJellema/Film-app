@@ -22,6 +22,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
@@ -74,6 +76,10 @@ fun CameraScreen(
     val context = LocalContext.current
     var dimmed by remember { mutableStateOf(false) }
 
+    // Adjusting the box hides the HUD: the lens chips and the zoom slider sit exactly where the lower
+    // handles usually are, and they swallow the drag before it ever reaches one.
+    var editingRoi by remember { mutableStateOf(false) }
+
     // Sensor-driven, not display-driven: the activity is locked to landscape, so the display keeps
     // reporting its natural orientation and would push a bogus quarter turn into the pipeline.
     val deviceRotation = rememberDeviceRotationDegrees()
@@ -102,7 +108,12 @@ fun CameraScreen(
     }
 
     LaunchedEffect(dimmed) {
-        if (dimmed) setBrightness(context, 0.02f) else restoreBrightness(context)
+        if (dimmed) {
+            editingRoi = false
+            setBrightness(context, 0.02f)
+        } else {
+            restoreBrightness(context)
+        }
     }
 
     val aspect = remember(status.effectiveSize, status.previewRotation) {
@@ -133,6 +144,7 @@ fun CameraScreen(
                 detectionBoxes = detection.boxes,
                 triggered = detection.hit,
                 editable = !dimmed,
+                emphasised = editingRoi,
                 showDetections = settings.showDetectionOverlay,
                 onRoiChange = viewModel::dragRoi,
                 onRoiCommit = viewModel::commitRoi,
@@ -140,7 +152,14 @@ fun CameraScreen(
             )
         }
 
-        if (!dimmed) {
+        if (!dimmed && editingRoi) {
+            RoiEditBar(
+                onDone = { editingRoi = false },
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+        }
+
+        if (!dimmed && !editingRoi) {
             TopHud(
                 settings = settings,
                 status = status,
@@ -151,6 +170,7 @@ fun CameraScreen(
                 onOpenGallery = onOpenGallery,
                 onFocus = { viewModel.engine.focusNow() },
                 onDim = { dimmed = true },
+                onEditRoi = { editingRoi = true },
                 modifier = Modifier.align(Alignment.TopCenter),
             )
 
@@ -220,6 +240,7 @@ private fun TopHud(
     onOpenGallery: () -> Unit,
     onFocus: () -> Unit,
     onDim: () -> Unit,
+    onEditRoi: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -282,6 +303,9 @@ private fun TopHud(
             Spacer(Modifier.width(8.dp))
         }
 
+        IconButton(onClick = onEditRoi) {
+            Icon(Icons.Filled.CropFree, contentDescription = "Adjust detection box", tint = Color.White)
+        }
         IconButton(onClick = onFocus) {
             Icon(Icons.Filled.CenterFocusStrong, contentDescription = "Focus now", tint = Color.White)
         }
@@ -293,6 +317,46 @@ private fun TopHud(
         }
         IconButton(onClick = onOpenSettings) {
             Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Color.White)
+        }
+    }
+}
+
+/** Replaces the HUD while the box is being adjusted, so nothing is left to intercept a drag. */
+@Composable
+private fun RoiEditBar(onDone: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.45f))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text(
+                text = "Adjusting detection box",
+                color = KickerOrange,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelSmall,
+            )
+            Text(
+                text = "Drag inside the box to move it, a corner or an edge to resize it.",
+                color = Color.White.copy(alpha = 0.7f),
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Button(
+            onClick = onDone,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = KickerGreen,
+                contentColor = Color.Black,
+            ),
+        ) {
+            Icon(Icons.Filled.Check, contentDescription = null)
+            Spacer(Modifier.width(6.dp))
+            Text("Done")
         }
     }
 }

@@ -41,6 +41,8 @@ fun RoiOverlay(
     detectionBoxes: List<RoiRect>,
     triggered: Boolean,
     editable: Boolean,
+    /** Draws the box heavier while it is being adjusted, so the mode is obvious. */
+    emphasised: Boolean,
     showDetections: Boolean,
     onRoiChange: (RoiRect) -> Unit,
     onRoiCommit: () -> Unit,
@@ -48,8 +50,12 @@ fun RoiOverlay(
 ) {
     val density = LocalDensity.current
     val handleTouchPx = remember(density) { with(density) { 34.dp.toPx() } }
-    val handleDrawPx = remember(density) { with(density) { 12.dp.toPx() } }
-    val strokePx = remember(density) { with(density) { 2.dp.toPx() } }
+    val handleDrawPx = remember(density, emphasised) {
+        with(density) { if (emphasised) 15.dp.toPx() else 12.dp.toPx() }
+    }
+    val strokePx = remember(density, emphasised) {
+        with(density) { if (emphasised) 3.dp.toPx() else 2.dp.toPx() }
+    }
 
     // The gesture lambdas below live for the lifetime of the pointerInput node, which must not be
     // re-keyed on every drag frame. They therefore have to read the *current* box and callbacks

@@ -278,10 +278,11 @@ class CaptureEngine(
         // Must happen before the session is configured: this is what fixes the preview stream size.
         target.setBufferSize(plan.size)
 
+        val frameSource = frameSourceFor(descriptor)
         val rotation = Camera2Session.displayRotationDegrees(
-            sensorOrientation = descriptor.sensorOrientation,
+            sensorOrientation = frameSource.sensorOrientation,
             displayRotationDegrees = displayRotationDegrees,
-            facing = descriptor.facing,
+            facing = frameSource.facing,
         )
 
         val recorderConfig = RecorderConfig(
@@ -427,9 +428,19 @@ class CaptureEngine(
         }
     }
 
+    /**
+     * The camera whose sensor actually produces the frames.
+     *
+     * Streaming from a physical sub-camera means the frames come off *that* sensor, and its mounting
+     * can differ from the logical camera's — taking the orientation from the logical one leaves the
+     * viewfinder and the saved file a quarter turn out on the devices where they disagree.
+     */
+    private fun frameSourceFor(descriptor: CameraDescriptor): CameraDescriptor =
+        settings.physicalCameraId?.let { capabilities.descriptor(it) } ?: descriptor
+
     private val sessionListener = object : Camera2Session.Listener {
         override fun onSessionReady(descriptor: CameraDescriptor) {
-            activeDescriptor = descriptor
+            activeDescriptor = frameSourceFor(descriptor)
             _status.value = _status.value.copy(lifecycle = CaptureLifecycle.RUNNING, error = null)
         }
 

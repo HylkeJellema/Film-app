@@ -552,6 +552,48 @@ class ClipRecorder(
         }
     }
 
+    /**
+     * Timestamp for the next audio chunk, counted in audio frames from an anchor on the camera clock.
+     *
+     * Counting frames rather than reading the clock per chunk keeps the samples evenly spaced, but it
+     * also means the microphone's own clock is what advances the timeline — and it ticks
+     * independently of the camera's. Over a session left armed all afternoon the two pull apart, so
+     * the anchor is re-taken whenever the gap has grown and no clip is being written. Left alone the
+     * drift would first shift the audio of clips saved late in the day and eventually pass
+     * [AUDIO_DRIFT_LIMIT_US], where the backstop in [onAudioSampleLocked] discards audio entirely.
+     *
+     * Re-anchoring only ever moves the timeline forward: timestamps that walk backwards upset both
+     * the AAC encoder and the ordering the ring buffer is read back in. When the audio timeline is
+     * the one running ahead, this returns null and the chunk is dropped, letting real time catch up
+     * with it instead.
+     */
+    private fun nextAudioPtsUs(frames: Int, sampleRate: Int): Long? = synchronized(lock) {
+        val chunkUs = framesToUs(frames, sampleRate)
+        val startedAtUs = cameraClockUs() - chunkUs
+        if (audioAnchorUs < 0) {
+            audioAnchorUs = startedAtUs
+            audioFramesQueued = 0L
+        }
+
+        val pts = audioAnchorUs + framesToUs(audioFramesQueued, sampleRate)
+
+        if (active == null) {
+            val drift = pts - startedAtUs
+            if (drift < -AUDIO_RESYNC_SLACK_US) {
+                audioAnchorUs = startedAtUs
+                audioFramesQueued = frames.toLong()
+                return startedAtUs
+            }
+            if (drift > AUDIO_RESYNC_SLACK_US) {
+                // Drop it rather than stamping it no later than the chunk before it.
+                return null
+            }
+        }
+
+        audioFramesQueued += frames
+        pts
+    }
+
     private fun audioLoop(record: AudioRecord, codec: MediaCodec, sampleRate: Int, channelCount: Int) {
         val bytesPerFrame = 2 * channelCount
         val chunk = ByteArray(2048 * bytesPerFrame)
@@ -561,14 +603,12 @@ class ClipRecorder(
                 val read = record.read(chunk, 0, chunk.size)
                 // Until the first video sample has revealed which clock the camera uses, there is no
                 // correct timestamp to give audio, so it is discarded rather than guessed at.
-                if (read > 0 && cameraClockDetected) {
-                    val frames = read / bytesPerFrame
-                    if (audioAnchorUs < 0) {
-                        audioAnchorUs = cameraClockUs() - framesToUs(frames, sampleRate)
-                    }
-                    val ptsUs = audioAnchorUs + framesToUs(audioFramesQueued, sampleRate)
-                    audioFramesQueued += frames
-
+                val ptsUs = if (read > 0 && cameraClockDetected) {
+                    nextAudioPtsUs(read / bytesPerFrame, sampleRate)
+                } else {
+                    null
+                }
+                if (ptsUs != null) {
                     val inIndex = codec.dequeueInputBuffer(10_000L)
                     if (inIndex >= 0) {
                         codec.getInputBuffer(inIndex)?.let { buf ->
@@ -678,6 +718,13 @@ class ClipRecorder(
          * hours-long gap a wrong clock domain produces.
          */
         private const val AUDIO_DRIFT_LIMIT_US = 5_000_000L
+
+        /**
+         * Audio/video misalignment tolerated before the anchor is re-taken between clips. Well under
+         * [AUDIO_DRIFT_LIMIT_US], so slow clock drift is corrected long before the backstop above
+         * would start throwing audio away.
+         */
+        private const val AUDIO_RESYNC_SLACK_US = 300_000L
         private const val BUFFER_HEADROOM_SEC = 2.0
         private const val MIN_VIDEO_RING_BYTES = 8L * 1024 * 1024
         private const val MAX_VIDEO_RING_BYTES = 384L * 1024 * 1024
