@@ -46,7 +46,7 @@ data class CaptureStatus(
     /** Inputs the rotation was derived from, surfaced so a wrong viewfinder can be diagnosed on the spot. */
     val sensorOrientation: Int = 0,
     val deviceRotation: Int = 0,
-    val rotationIsManual: Boolean = false,
+    val rotationOffset: Int = 0,
     val detectionAvailable: Boolean = true,
     val readout: SensorReadout = SensorReadout(),
     val message: String? = null,
@@ -133,7 +133,7 @@ class CaptureEngine(
     /** Recomputes the rotation from the current inputs and pushes it everywhere it is used. */
     private fun applyRotation(descriptor: CameraDescriptor, degrees: Int) {
         val rotation = Camera2Session.effectiveRotationDegrees(
-            overrideDegrees = settings.rotationOverrideDegrees,
+            offsetDegrees = settings.rotationOffsetDegrees,
             sensorOrientation = descriptor.sensorOrientation,
             displayRotationDegrees = degrees,
             facing = descriptor.facing,
@@ -149,7 +149,7 @@ class CaptureEngine(
             previewRotation = rotation,
             sensorOrientation = descriptor.sensorOrientation,
             deviceRotation = degrees,
-            rotationIsManual = settings.rotationOverrideDegrees != null,
+            rotationOffset = settings.rotationOffsetDegrees,
         )
     }
 
@@ -176,7 +176,7 @@ class CaptureEngine(
             displayRotation = _status.value.previewRotation,
         )
 
-        if (previous.rotationOverrideDegrees != next.rotationOverrideDegrees) {
+        if (previous.rotationOffsetDegrees != next.rotationOffsetDegrees) {
             activeDescriptor?.let { applyRotation(it, displayRotationDegrees) }
         }
 
@@ -301,7 +301,7 @@ class CaptureEngine(
 
         val frameSource = frameSourceFor(descriptor)
         val rotation = Camera2Session.effectiveRotationDegrees(
-            overrideDegrees = settings.rotationOverrideDegrees,
+            offsetDegrees = settings.rotationOffsetDegrees,
             sensorOrientation = frameSource.sensorOrientation,
             displayRotationDegrees = displayRotationDegrees,
             facing = frameSource.facing,
@@ -367,7 +367,7 @@ class CaptureEngine(
             previewRotation = rotation,
             sensorOrientation = frameSource.sensorOrientation,
             deviceRotation = displayRotationDegrees,
-            rotationIsManual = settings.rotationOverrideDegrees != null,
+            rotationOffset = settings.rotationOffsetDegrees,
             detectionAvailable = plan.useAnalysisStream,
             message = plan.note,
             bufferBytes = newRecorder.estimatedVideoBufferBytes.toLong(),

@@ -92,14 +92,13 @@ data class AppSettings(
     val stabilisation: Boolean = true,
 
     /**
-     * Forces the rotation applied to the viewfinder and written into the clip, in degrees, or null to
-     * derive it from the sensor mounting and the phone's orientation.
+     * Correction added to the derived rotation, in degrees, for devices where the derivation is wrong.
      *
-     * An escape hatch for devices where those inputs cannot be trusted: it is the same value the
-     * automatic path computes, so it feeds the preview, the container's orientation hint and the
-     * detector's coordinate mapping alike.
+     * An offset rather than a fixed angle: the error is constant while the correct rotation changes
+     * with the phone, so pinning one absolute angle is only ever right in one orientation. It applies
+     * to the viewfinder, the clip's orientation hint and the detector's coordinate mapping alike.
      */
-    val rotationOverrideDegrees: Int? = null,
+    val rotationOffsetDegrees: Int = 0,
 
     // ---- Clip timing ----
     val preRollSec: Float = 5f,

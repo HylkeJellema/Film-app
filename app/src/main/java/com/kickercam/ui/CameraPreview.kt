@@ -7,7 +7,7 @@ import android.view.TextureView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -63,9 +63,14 @@ fun CameraPreview(
             Modifier.graphicsLayer { rotationZ = rotation.toFloat() }
         }
 
+        // requiredSize, not size: a quarter turn asks for a box wider than the slot it will occupy
+        // once rotated, and size() is clamped by the incoming constraints. Asking for 2560x1440 inside
+        // a 1440x2560 slot got clamped to 1440x1440 — an actual square, with the image shrunk to fit
+        // inside it while the overlay still spanned the full slot. requiredSize ignores the clamp,
+        // which is exactly right here: after the rotation the box lands inside the slot anyway.
         Box(
             modifier = Modifier
-                .size(width = viewWidth, height = viewHeight)
+                .requiredSize(width = viewWidth, height = viewHeight)
                 .then(rotationModifier),
         ) {
             AndroidView(

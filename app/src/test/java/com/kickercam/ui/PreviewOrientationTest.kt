@@ -112,32 +112,42 @@ class PreviewOrientationTest {
         assertEquals(16f / 9f, bufferAspectRatio(1920, 0), 1e-4f)
     }
 
-    // ------------------------------------------------------------------ manual override
+    // ------------------------------------------------------------------ rotation correction
+
+    private fun corrected(offset: Int, sensorOrientation: Int, deviceDegrees: Int) =
+        Camera2Session.effectiveRotationDegrees(offset, sensorOrientation, deviceDegrees, LENS_FACING_BACK)
 
     @Test
-    fun `no override leaves the automatic result alone`() {
-        assertEquals(
-            backRotation(sensorOrientation = 90, deviceDegrees = 90),
-            Camera2Session.effectiveRotationDegrees(null, 90, 90, LENS_FACING_BACK),
-        )
+    fun `no correction leaves the derived result alone`() {
+        for (device in listOf(0, 90, 180, 270)) {
+            assertEquals(backRotation(90, device), corrected(0, 90, device))
+        }
     }
 
     @Test
-    fun `an override wins over whatever the sensor and the phone say`() {
-        for (sensor in listOf(0, 90, 180, 270)) {
+    fun `a correction follows the phone instead of pinning one angle`() {
+        // The device that prompted this reports SENSOR_ORIENTATION 90 but delivers frames as though it
+        // were 270: half a turn out in every orientation. Portrait needed 270, which a fixed 270 gets
+        // right — and then landscape needs 180, which it cannot give. Half a turn added to the
+        // derivation is right in both.
+        assertEquals(270, corrected(180, sensorOrientation = 90, deviceDegrees = 0))
+        assertEquals(180, corrected(180, sensorOrientation = 90, deviceDegrees = 90))
+        assertEquals(90, corrected(180, sensorOrientation = 90, deviceDegrees = 180))
+        assertEquals(0, corrected(180, sensorOrientation = 90, deviceDegrees = 270))
+    }
+
+    @Test
+    fun `corrections stay on a normalised quarter turn`() {
+        for (offset in listOf(0, 90, 180, 270)) {
             for (device in listOf(0, 90, 180, 270)) {
-                assertEquals(
-                    270,
-                    Camera2Session.effectiveRotationDegrees(270, sensor, device, LENS_FACING_BACK),
-                )
+                val rotation = corrected(offset, 90, device)
+                assertTrue("$offset/$device -> $rotation", rotation in listOf(0, 90, 180, 270))
             }
         }
     }
 
     @Test
-    fun `an override is normalised like any other rotation`() {
-        assertEquals(90, Camera2Session.effectiveRotationDegrees(450, 90, 90, LENS_FACING_BACK))
-        assertEquals(270, Camera2Session.effectiveRotationDegrees(-90, 90, 90, LENS_FACING_BACK))
-        assertEquals(0, Camera2Session.effectiveRotationDegrees(0, 90, 0, LENS_FACING_BACK))
+    fun `four corrections bring you back to where you started`() {
+        assertEquals(corrected(0, 90, 90), corrected(360, 90, 90))
     }
 }

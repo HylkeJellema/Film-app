@@ -193,17 +193,19 @@ private fun VideoSection(viewModel: CameraViewModel, settings: AppSettings) {
         )
 
         Spacer(Modifier.height(8.dp))
-        Label("Viewfinder rotation")
+        Label("Rotation correction")
         ChipRow(
-            items = listOf(null, 0, 90, 180, 270),
-            isSelected = { it == settings.rotationOverrideDegrees },
-            label = { if (it == null) "Auto" else "$it°" },
-            onSelect = { degrees -> viewModel.update { it.copy(rotationOverrideDegrees = degrees) } },
+            items = listOf(0, 90, 180, 270),
+            isSelected = { it == settings.rotationOffsetDegrees },
+            label = { if (it == 0) "None" else "+$it°" },
+            onSelect = { degrees -> viewModel.update { it.copy(rotationOffsetDegrees = degrees) } },
         )
         Text(
-            "Auto derives it from the lens mounting and the phone's orientation. If the viewfinder " +
-                "comes up on its side, pick the turn that makes it upright — it applies to saved " +
-                "clips and the detection box as well. The HUD shows what is being applied.",
+            "Rotation is derived from the lens mounting and the window's orientation, which a few " +
+                "devices report wrongly. If the viewfinder comes up turned, add the correction that " +
+                "makes it upright — being an offset rather than a fixed angle, it stays right when " +
+                "you turn the phone. It applies to saved clips and the detection box too, and the " +
+                "HUD shows what is being applied.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

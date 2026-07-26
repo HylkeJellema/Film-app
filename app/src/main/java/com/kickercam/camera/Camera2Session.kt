@@ -382,19 +382,24 @@ class Camera2Session(
          * current display rotation.
          */
         /**
-         * The rotation to apply, honouring a manual override when one is set.
+         * The rotation to apply: the derived one, plus a correction for devices where the derivation
+         * is wrong.
          *
-         * The automatic path can only be as good as `SENSOR_ORIENTATION` and the orientation the
-         * accelerometer reports, and neither is reliable on every device — an override is the only
-         * way for someone holding the phone to settle it.
+         * The correction is an *offset*, not a fixed angle, because the error it corrects is fixed
+         * while the right answer is not. A device that reports `SENSOR_ORIENTATION` 90 but delivers
+         * frames as though it were 270 is wrong by half a turn in every orientation, so half a turn
+         * added to the derivation fixes it everywhere. Pinning the rotation to one absolute angle can
+         * only ever be right in one orientation, and turning the phone breaks it again.
          */
         fun effectiveRotationDegrees(
-            overrideDegrees: Int?,
+            offsetDegrees: Int,
             sensorOrientation: Int,
             displayRotationDegrees: Int,
             facing: Int,
-        ): Int = overrideDegrees?.let { ((it % 360) + 360) % 360 }
-            ?: displayRotationDegrees(sensorOrientation, displayRotationDegrees, facing)
+        ): Int {
+            val derived = displayRotationDegrees(sensorOrientation, displayRotationDegrees, facing)
+            return ((derived + offsetDegrees) % 360 + 360) % 360
+        }
 
         fun displayRotationDegrees(sensorOrientation: Int, displayRotationDegrees: Int, facing: Int): Int {
             val normalised = if (facing == CameraCharacteristics.LENS_FACING_FRONT) {

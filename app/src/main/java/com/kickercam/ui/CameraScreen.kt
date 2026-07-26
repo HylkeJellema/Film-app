@@ -346,7 +346,7 @@ private fun Readouts(
                 append("rot sensor ${status.sensorOrientation}")
                 append(" · window ${status.deviceRotation}")
                 append(" · applied ${status.previewRotation}")
-                if (status.rotationIsManual) append(" (manual)")
+                if (status.rotationOffset != 0) append(" (auto +${status.rotationOffset})")
             },
             style = MaterialTheme.typography.labelSmall,
             color = KickerOrange,
