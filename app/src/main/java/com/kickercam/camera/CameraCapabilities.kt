@@ -139,8 +139,14 @@ class CameraCapabilities(context: Context) {
     private val referenceEquivalentMm: Float? =
         referenceBackCamera?.equivalentFocalMm?.takeIf { it > 0f }
 
-    /** Zoom factor of [descriptor] relative to the main camera, e.g. 5.0 for a 5x tele. */
+    /**
+     * Zoom factor of [descriptor] relative to the main camera, e.g. 5.0 for a 5x tele.
+     *
+     * Only meaningful between cameras facing the same way — a front camera's focal length compared
+     * against the rear main camera's is a number with no physical meaning.
+     */
     fun relativeZoom(descriptor: CameraDescriptor): Float? {
+        if (!descriptor.isBackFacing) return null
         val ref = referenceEquivalentMm ?: return null
         val equiv = descriptor.equivalentFocalMm ?: return null
         return equiv / ref

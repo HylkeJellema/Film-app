@@ -1,7 +1,6 @@
 package com.kickercam.ui
 
 import android.app.Activity
-import android.view.Surface
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,11 +49,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kickercam.capture.CaptureLifecycle
 import com.kickercam.settings.AppSettings
@@ -75,21 +72,13 @@ fun CameraScreen(
     val detection by viewModel.engine.detection.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
     var dimmed by remember { mutableStateOf(false) }
 
-    // The activity handles rotation itself, so the engine has to be told when the phone is mounted
-    // the other way round in landscape — otherwise the preview and the saved file are upside down.
-    LaunchedEffect(configuration) {
-        val rotation = ContextCompat.getDisplayOrDefault(context).rotation
-        viewModel.engine.setDisplayRotation(
-            when (rotation) {
-                Surface.ROTATION_90 -> 90
-                Surface.ROTATION_180 -> 180
-                Surface.ROTATION_270 -> 270
-                else -> 0
-            },
-        )
+    // Sensor-driven, not display-driven: the activity is locked to landscape, so the display keeps
+    // reporting its natural orientation and would push a bogus quarter turn into the pipeline.
+    val deviceRotation = rememberDeviceRotationDegrees()
+    LaunchedEffect(deviceRotation) {
+        viewModel.engine.setDisplayRotation(deviceRotation)
     }
 
     // Keep the viewfinder alive: the phone is on a tripod and nobody is going to tap it.
@@ -116,17 +105,21 @@ fun CameraScreen(
         if (dimmed) setBrightness(context, 0.02f) else restoreBrightness(context)
     }
 
-    val aspect = remember(status.effectiveSize) { previewAspectRatio(status.effectiveSize) }
+    val aspect = remember(status.effectiveSize, status.previewRotation) {
+        previewAspectRatio(status.effectiveSize, status.previewRotation)
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
 
+        // No fillMaxSize here: it fixes the constraints, which makes aspectRatio a no-op and lets the
+        // preview stretch to the whole screen. aspectRatio alone fits-and-letterboxes correctly.
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .fillMaxSize()
                 .aspectRatio(aspect),
         ) {
             CameraPreview(
+                bufferSize = status.effectiveSize,
                 rotationDegrees = status.previewRotation,
                 onTargetChanged = { target ->
                     if (target != null) viewModel.engine.attachPreview(target)

@@ -81,6 +81,7 @@ class CaptureEngine(
     private var previewTarget: PreviewTarget? = null
     private var settings: AppSettings = AppSettings()
     private var displayRotationDegrees: Int = 90
+    private var activeDescriptor: CameraDescriptor? = null
     private var lensLabel: String = ""
 
     private var fallbackAttempt = 0
@@ -110,10 +111,29 @@ class CaptureEngine(
         scope.launch { stopAsync() }
     }
 
+    /**
+     * Re-mounting the phone the other way round only changes how frames are oriented, never the
+     * format, so this is applied to the live session instead of rebuilding it — tearing the encoder
+     * down would throw away the rolling buffer and with it the pre-roll.
+     */
     fun setDisplayRotation(degrees: Int) {
         if (displayRotationDegrees == degrees) return
         displayRotationDegrees = degrees
-        if (_status.value.lifecycle == CaptureLifecycle.RUNNING) restart("display rotated")
+
+        val descriptor = activeDescriptor ?: return
+        val rotation = Camera2Session.displayRotationDegrees(
+            sensorOrientation = descriptor.sensorOrientation,
+            displayRotationDegrees = degrees,
+            facing = descriptor.facing,
+        )
+        recorder?.orientationHint = rotation
+        pipeline?.configure(
+            mode = settings.detectorMode,
+            sensitivity = settings.sensitivity,
+            roi = settings.roi,
+            displayRotation = rotation,
+        )
+        _status.value = _status.value.copy(previewRotation = rotation)
     }
 
     fun setLensLabel(label: String) {
@@ -409,6 +429,7 @@ class CaptureEngine(
 
     private val sessionListener = object : Camera2Session.Listener {
         override fun onSessionReady(descriptor: CameraDescriptor) {
+            activeDescriptor = descriptor
             _status.value = _status.value.copy(lifecycle = CaptureLifecycle.RUNNING, error = null)
         }
 

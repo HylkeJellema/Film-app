@@ -13,6 +13,7 @@ import android.util.Log
 import android.view.Surface
 import java.io.File
 import java.nio.ByteBuffer
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.roundToLong
 
@@ -98,6 +99,18 @@ class ClipRecorder(
 
     private var audioAnchorUs = -1L
     private var audioFramesQueued = 0L
+
+    private var droppedAudioSamples = 0L
+
+    /** Which clock the camera actually stamps frames with, measured from the first video sample. */
+    @Volatile private var cameraClockIsBootTime = false
+    @Volatile private var cameraClockDetected = false
+
+    /**
+     * Orientation written into the clip's container. Read when a clip starts rather than fixed at
+     * construction, so re-mounting the phone does not require tearing the session down.
+     */
+    @Volatile var orientationHint: Int = config.orientationHint
 
     val estimatedVideoBufferBytes: Int = videoRingCapacity()
 
@@ -201,6 +214,8 @@ class ClipRecorder(
             audioFormat = null
             audioAnchorUs = -1L
             audioFramesQueued = 0L
+            cameraClockDetected = false
+            droppedAudioSamples = 0L
         }
     }
 
@@ -274,7 +289,7 @@ class ClipRecorder(
         var audioTrack = -1
         try {
             muxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            muxer.setOrientationHint(config.orientationHint)
+            muxer.setOrientationHint(orientationHint)
             videoTrack = muxer.addTrack(vFormat)
             audioFormat?.let { audioTrack = muxer.addTrack(it) }
             muxer.start()
@@ -420,6 +435,7 @@ class ClipRecorder(
     }
 
     private fun onVideoSampleLocked(buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
+        if (!cameraClockDetected) detectCameraClockLocked(info.presentationTimeUs)
         videoRing.add(buffer, info.offset, info.size, info.flags, info.presentationTimeUs)
 
         val clip = active ?: return
@@ -448,8 +464,39 @@ class ClipRecorder(
 
     // ------------------------------------------------------------------ audio
 
+    /**
+     * Audio has to be stamped in the same time domain the camera uses, and the camera's declared
+     * [android.hardware.camera2.CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE] cannot be
+     * trusted — some devices advertise REALTIME while emitting monotonic timestamps.
+     *
+     * The two clocks differ by however long the phone has spent in deep sleep since boot, which on a
+     * phone that has been alive for days is *hours*. Getting it wrong therefore does not cause a
+     * subtle sync error: it writes an audio sample hours past the video, and the muxed file claims a
+     * duration of hours with a single frozen frame.
+     *
+     * So it is measured rather than assumed. The first encoded video sample's timestamp is compared
+     * against both candidate clocks and the nearer one wins; they are hours apart, so the comparison
+     * is never ambiguous.
+     */
+    private fun detectCameraClockLocked(firstVideoPtsUs: Long) {
+        val monotonicUs = System.nanoTime() / 1000
+        val bootTimeUs = SystemClock.elapsedRealtimeNanos() / 1000
+
+        val monotonicDelta = abs(firstVideoPtsUs - monotonicUs)
+        val bootTimeDelta = abs(firstVideoPtsUs - bootTimeUs)
+        cameraClockIsBootTime = bootTimeDelta < monotonicDelta
+        cameraClockDetected = true
+
+        Log.i(
+            TAG,
+            "camera clock detected as ${if (cameraClockIsBootTime) "BOOTTIME" else "MONOTONIC"} " +
+                "(declared ${if (config.cameraTimestampIsRealtime) "REALTIME" else "UNKNOWN"}, " +
+                "offset ${minOf(monotonicDelta, bootTimeDelta) / 1000}ms)",
+        )
+    }
+
     private fun cameraClockUs(): Long =
-        if (config.cameraTimestampIsRealtime) {
+        if (cameraClockIsBootTime) {
             SystemClock.elapsedRealtimeNanos() / 1000
         } else {
             System.nanoTime() / 1000
@@ -512,7 +559,9 @@ class ClipRecorder(
         try {
             while (running) {
                 val read = record.read(chunk, 0, chunk.size)
-                if (read > 0) {
+                // Until the first video sample has revealed which clock the camera uses, there is no
+                // correct timestamp to give audio, so it is discarded rather than guessed at.
+                if (read > 0 && cameraClockDetected) {
                     val frames = read / bytesPerFrame
                     if (audioAnchorUs < 0) {
                         audioAnchorUs = cameraClockUs() - framesToUs(frames, sampleRate)
@@ -553,11 +602,29 @@ class ClipRecorder(
     }
 
     private fun onAudioSampleLocked(buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
+        // Backstop against a mis-stamped audio sample ever reaching a file again. Even if clock
+        // detection were somehow wrong, an audio packet that is not plausibly near the video
+        // timeline is dropped rather than written, so the container's duration stays honest.
+        val newestVideoPtsUs = videoRing.newestPtsUs()
+        if (newestVideoPtsUs >= 0 &&
+            abs(info.presentationTimeUs - newestVideoPtsUs) > AUDIO_DRIFT_LIMIT_US
+        ) {
+            if (droppedAudioSamples++ % 200 == 0L) {
+                Log.w(
+                    TAG,
+                    "dropping audio ${(info.presentationTimeUs - newestVideoPtsUs) / 1_000_000}s away " +
+                        "from the video timeline",
+                )
+            }
+            return
+        }
+
         audioRing?.add(buffer, info.offset, info.size, info.flags, info.presentationTimeUs)
 
         val clip = active ?: return
         if (clip.audioTrack < 0) return
         if (info.presentationTimeUs < clip.basePtsUs) return
+        if (info.presentationTimeUs > clip.basePtsUs + config.maxClipUs + AUDIO_DRIFT_LIMIT_US) return
 
         val out = MediaCodec.BufferInfo().apply {
             set(
@@ -604,6 +671,13 @@ class ClipRecorder(
 
     companion object {
         private const val AUDIO_SAMPLE_RATE = 48_000
+
+        /**
+         * How far an audio packet may sit from the newest video frame before it is treated as
+         * mis-stamped. Generous enough for any real encoder/recorder latency, tiny next to the
+         * hours-long gap a wrong clock domain produces.
+         */
+        private const val AUDIO_DRIFT_LIMIT_US = 5_000_000L
         private const val BUFFER_HEADROOM_SEC = 2.0
         private const val MIN_VIDEO_RING_BYTES = 8L * 1024 * 1024
         private const val MAX_VIDEO_RING_BYTES = 384L * 1024 * 1024

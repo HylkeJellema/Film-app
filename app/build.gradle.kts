@@ -13,8 +13,8 @@ android {
         applicationId = "com.kickercam"
         minSdk = 29
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         // The bundled ML Kit models ship a native inference engine per ABI, which is most of the
         // APK. Every phone this app targets is arm64, so the other three are pure dead weight.

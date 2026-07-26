@@ -177,13 +177,13 @@ fun PlayerScreen(
                         Text("Jump to moment")
                     }
 
-                    Button(
-                        onClick = { viewModel.exportClip(clip) },
-                        enabled = !clip.meta.exported,
-                    ) {
+                    // Always enabled: an earlier export says nothing about whether the file is
+                    // still in the gallery, and re-exporting a clip you deleted by accident should
+                    // not require deleting and re-shooting it.
+                    Button(onClick = { viewModel.exportClip(clip) }) {
                         Icon(Icons.Filled.Download, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
-                        Text(if (clip.meta.exported) "Already saved" else "Save to gallery")
+                        Text(if (clip.meta.exported) "Save again" else "Save to gallery")
                     }
                 }
 

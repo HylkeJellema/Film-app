@@ -149,10 +149,19 @@ lively, lower the sensitivity or shrink the box.
   disables automatic detection and tells you so, leaving *Save now* working. It never fails silently.
 - **arm64 only.** The bundled ML native libraries are most of the APK, and shipping four ABIs
   quadrupled it for no benefit — every phone this targets is arm64.
-- **Locked to landscape**, both ways round. Rotating the phone 180° in its mount is handled; portrait
-  is not supported.
-- **Audio** is buffered alongside the video and muxed into the clip. It is mapped onto the camera's own
-  timestamp domain to stay in sync. If the mic permission is denied, clips are simply silent.
+- **Locked to landscape**, both ways round. Orientation comes from the accelerometer, not from
+  `Display.getRotation()` — a fixed-orientation activity never actually rotates its display, so the
+  display rotation would report the natural orientation and skew every frame by a quarter turn.
+- **Audio** is buffered alongside the video and muxed into the clip. If the mic permission is denied,
+  clips are simply silent.
+
+  Audio has to be stamped in the camera's own time domain, and `SENSOR_INFO_TIMESTAMP_SOURCE` cannot
+  be trusted to say which one that is — some devices advertise `REALTIME` while emitting monotonic
+  timestamps. The two clocks differ by however long the phone has slept since boot, which is *hours*
+  on a phone that has been alive for days, so getting it wrong does not cause a subtle sync error: it
+  writes audio hours past the video and the file claims a duration of hours with one frozen frame. The
+  clock is therefore measured from the first encoded frame rather than assumed, and any audio packet
+  that is not plausibly near the video timeline is dropped rather than muxed.
 
 ### Not implemented
 
