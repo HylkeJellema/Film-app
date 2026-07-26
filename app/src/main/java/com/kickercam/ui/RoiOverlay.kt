@@ -24,16 +24,13 @@ import com.kickercam.ui.theme.KickerOrange
 /**
  * The detection box: drag the middle to move it onto the kicker, drag a corner or an edge to resize.
  *
- * Everything is drawn against [fit], the rectangle the camera image actually occupies, rather than
- * against the whole viewfinder — the box marks a region of the *picture*, so on a letterboxed preview
- * it has to stay on the picture and off the black bars.
- *
- * Coordinates are normalised so the box keeps its framing across resolution and lens changes.
+ * Laid out over the picture itself, never the black bars around it, so this canvas *is* the image and
+ * a fraction of one is a fraction of the other. Coordinates are normalised so the box keeps its
+ * framing across resolution and lens changes.
  */
 @Composable
 fun RoiOverlay(
     roi: RoiRect,
-    fit: PreviewFit?,
     detectionBoxes: List<RoiRect>,
     triggered: Boolean,
     editable: Boolean,
@@ -52,13 +49,13 @@ fun RoiOverlay(
         with(density) { if (emphasised) 3.dp.toPx() else 2.dp.toPx() }
     }
 
+    var canvasSize by remember { mutableStateOf(GeometrySize.Zero) }
     var dragMode by remember { mutableStateOf(DragMode.NONE) }
 
     // The gesture detector is installed once and outlives every recomposition, so it must not close
-    // over the box or the image rectangle it happened to see first — that froze the box at its
-    // starting shape and made every drag snap back.
+    // over the box it happened to see first — that froze the box at its starting shape and made every
+    // drag snap back.
     val currentRoi by rememberUpdatedState(roi)
-    val currentFit by rememberUpdatedState(fit)
     val changeRoi by rememberUpdatedState(onRoiChange)
     val commitRoi by rememberUpdatedState(onRoiCommit)
 
@@ -66,12 +63,10 @@ fun RoiOverlay(
         Modifier.pointerInput(Unit) {
             detectDragGestures(
                 onDragStart = { start ->
-                    val area = currentFit ?: return@detectDragGestures
+                    val area = canvasSize
                     if (area.width <= 0f || area.height <= 0f) return@detectDragGestures
                     dragMode = hitTest(
-                        // Into the image's own coordinates: the box lives on the picture, not on the
-                        // black bars around it.
-                        point = Offset(start.x - area.left, start.y - area.top),
+                        point = start,
                         roi = currentRoi,
                         width = area.width,
                         height = area.height,
@@ -84,7 +79,7 @@ fun RoiOverlay(
                 },
                 onDragCancel = { dragMode = DragMode.NONE },
                 onDrag = { _, delta ->
-                    val area = currentFit ?: return@detectDragGestures
+                    val area = canvasSize
                     if (area.width <= 0f || area.height <= 0f) return@detectDragGestures
                     if (dragMode == DragMode.NONE) return@detectDragGestures
                     changeRoi(
@@ -98,20 +93,19 @@ fun RoiOverlay(
     }
 
     Canvas(modifier = modifier.fillMaxSize().then(gestures)) {
-        val area = fit ?: return@Canvas
+        canvasSize = size
 
-        val left = area.left + roi.left * area.width
-        val top = area.top + roi.top * area.height
-        val width = roi.width * area.width
-        val height = roi.height * area.height
+        val left = roi.left * size.width
+        val top = roi.top * size.height
+        val width = roi.width * size.width
+        val height = roi.height * size.height
 
-        // Darken the rest of the picture so the framing is unmistakable. Only the picture: the bars
-        // outside it are already black.
+        // Darken everything outside the box so the framing is unmistakable.
         val shade = Color.Black.copy(alpha = 0.32f)
-        drawRect(shade, Offset(area.left, area.top), GeometrySize(area.width, top - area.top))
-        drawRect(shade, Offset(area.left, top + height), GeometrySize(area.width, area.bottom - top - height))
-        drawRect(shade, Offset(area.left, top), GeometrySize(left - area.left, height))
-        drawRect(shade, Offset(left + width, top), GeometrySize(area.right - left - width, height))
+        drawRect(shade, Offset(0f, 0f), GeometrySize(size.width, top))
+        drawRect(shade, Offset(0f, top + height), GeometrySize(size.width, size.height - top - height))
+        drawRect(shade, Offset(0f, top), GeometrySize(left, height))
+        drawRect(shade, Offset(left + width, top), GeometrySize(size.width - left - width, height))
 
         val boxColor = if (triggered) KickerGreen else KickerOrange
         drawRect(
@@ -149,8 +143,8 @@ fun RoiOverlay(
             for (box in detectionBoxes) {
                 drawRect(
                     color = KickerGreen.copy(alpha = 0.9f),
-                    topLeft = Offset(area.left + box.left * area.width, area.top + box.top * area.height),
-                    size = GeometrySize(box.width * area.width, box.height * area.height),
+                    topLeft = Offset(box.left * size.width, box.top * size.height),
+                    size = GeometrySize(box.width * size.width, box.height * size.height),
                     style = Stroke(width = strokePx * 0.6f),
                 )
             }

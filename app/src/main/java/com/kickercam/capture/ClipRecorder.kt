@@ -29,7 +29,6 @@ data class RecorderConfig(
     val postRollUs: Long,
     val maxClipUs: Long,
     val audioEnabled: Boolean,
-    val orientationHint: Int,
     val outputDir: File,
     val cameraTimestampIsRealtime: Boolean,
 ) {
@@ -105,12 +104,6 @@ class ClipRecorder(
     /** Which clock the camera actually stamps frames with, measured from the first video sample. */
     @Volatile private var cameraClockIsBootTime = false
     @Volatile private var cameraClockDetected = false
-
-    /**
-     * Orientation written into the clip's container. Read when a clip starts rather than fixed at
-     * construction, so re-mounting the phone does not require tearing the session down.
-     */
-    @Volatile var orientationHint: Int = config.orientationHint
 
     val estimatedVideoBufferBytes: Int = videoRingCapacity()
 
@@ -289,7 +282,6 @@ class ClipRecorder(
         var audioTrack = -1
         try {
             muxer = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            muxer.setOrientationHint(orientationHint)
             videoTrack = muxer.addTrack(vFormat)
             audioFormat?.let { audioTrack = muxer.addTrack(it) }
             muxer.start()

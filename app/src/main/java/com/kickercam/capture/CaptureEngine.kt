@@ -42,11 +42,6 @@ data class CaptureStatus(
     val bufferFill: Float = 0f,
     val effectiveSize: Size = Size(1920, 1080),
     val effectiveFps: Int = 60,
-    val previewRotation: Int = 0,
-    /** Inputs the rotation was derived from, surfaced so a wrong viewfinder can be diagnosed on the spot. */
-    val sensorOrientation: Int = 0,
-    val deviceRotation: Int = 0,
-    val rotationOffset: Int = 0,
     val detectionAvailable: Boolean = true,
     val readout: SensorReadout = SensorReadout(),
     val message: String? = null,
@@ -84,9 +79,6 @@ class CaptureEngine(
 
     private var previewTarget: PreviewTarget? = null
     private var settings: AppSettings = AppSettings()
-    // Natural orientation until the UI reports the window's: the activity is no longer locked, so
-    // portrait is a legitimate starting point rather than something to be corrected for.
-    private var displayRotationDegrees: Int = 0
     private var activeDescriptor: CameraDescriptor? = null
     private var lensLabel: String = ""
 
@@ -117,42 +109,6 @@ class CaptureEngine(
         scope.launch { stopAsync() }
     }
 
-    /**
-     * Re-mounting the phone the other way round only changes how frames are oriented, never the
-     * format, so this is applied to the live session instead of rebuilding it — tearing the encoder
-     * down would throw away the rolling buffer and with it the pre-roll.
-     */
-    fun setDisplayRotation(degrees: Int) {
-        if (displayRotationDegrees == degrees) return
-        displayRotationDegrees = degrees
-
-        val descriptor = activeDescriptor ?: return
-        applyRotation(descriptor, degrees)
-    }
-
-    /** Recomputes the rotation from the current inputs and pushes it everywhere it is used. */
-    private fun applyRotation(descriptor: CameraDescriptor, degrees: Int) {
-        val rotation = Camera2Session.effectiveRotationDegrees(
-            offsetDegrees = settings.rotationOffsetDegrees,
-            sensorOrientation = descriptor.sensorOrientation,
-            displayRotationDegrees = degrees,
-            facing = descriptor.facing,
-        )
-        recorder?.orientationHint = rotation
-        pipeline?.configure(
-            mode = settings.detectorMode,
-            sensitivity = settings.sensitivity,
-            roi = settings.roi,
-            displayRotation = rotation,
-        )
-        _status.value = _status.value.copy(
-            previewRotation = rotation,
-            sensorOrientation = descriptor.sensorOrientation,
-            deviceRotation = degrees,
-            rotationOffset = settings.rotationOffsetDegrees,
-        )
-    }
-
     fun setLensLabel(label: String) {
         lensLabel = label
     }
@@ -173,12 +129,7 @@ class CaptureEngine(
             mode = next.detectorMode,
             sensitivity = next.sensitivity,
             roi = next.roi,
-            displayRotation = _status.value.previewRotation,
         )
-
-        if (previous.rotationOffsetDegrees != next.rotationOffsetDegrees) {
-            activeDescriptor?.let { applyRotation(it, displayRotationDegrees) }
-        }
 
         if (_status.value.lifecycle != CaptureLifecycle.RUNNING) return
 
@@ -211,7 +162,6 @@ class CaptureEngine(
             mode = settings.detectorMode,
             sensitivity = settings.sensitivity,
             roi = roi,
-            displayRotation = _status.value.previewRotation,
         )
     }
 
@@ -245,7 +195,6 @@ class CaptureEngine(
 
     private fun requiresRebuild(a: AppSettings, b: AppSettings): Boolean =
         a.cameraId != b.cameraId ||
-            a.physicalCameraId != b.physicalCameraId ||
             a.widthPx != b.widthPx ||
             a.heightPx != b.heightPx ||
             a.fps != b.fps ||
@@ -299,14 +248,6 @@ class CaptureEngine(
         // Must happen before the session is configured: this is what fixes the preview stream size.
         target.setBufferSize(plan.size)
 
-        val frameSource = frameSourceFor(descriptor)
-        val rotation = Camera2Session.effectiveRotationDegrees(
-            offsetDegrees = settings.rotationOffsetDegrees,
-            sensorOrientation = frameSource.sensorOrientation,
-            displayRotationDegrees = displayRotationDegrees,
-            facing = frameSource.facing,
-        )
-
         val recorderConfig = RecorderConfig(
             widthPx = plan.size.width,
             heightPx = plan.size.height,
@@ -317,7 +258,6 @@ class CaptureEngine(
             postRollUs = settings.postRollUs,
             maxClipUs = settings.maxClipUs,
             audioEnabled = settings.audioEnabled,
-            orientationHint = rotation,
             outputDir = repository.clipsDir,
             cameraTimestampIsRealtime = descriptor.timestampIsRealtime,
         )
@@ -340,7 +280,7 @@ class CaptureEngine(
                 analysisSize = Camera2Session.analysisSizeFor(plan.size),
                 onVerdict = ::onVerdict,
             ).also {
-                it.configure(settings.detectorMode, settings.sensitivity, settings.roi, rotation)
+                it.configure(settings.detectorMode, settings.sensitivity, settings.roi)
             }
         } else {
             null
@@ -352,7 +292,6 @@ class CaptureEngine(
         newSession.open(
             SessionRequest(
                 cameraId = cameraId,
-                physicalCameraId = settings.physicalCameraId,
                 previewSurface = target.surface,
                 recordSurface = encoderSurface,
                 analysisSurface = newPipeline?.surface,
@@ -364,10 +303,6 @@ class CaptureEngine(
         _status.value = _status.value.copy(
             effectiveSize = plan.size,
             effectiveFps = plan.fps,
-            previewRotation = rotation,
-            sensorOrientation = frameSource.sensorOrientation,
-            deviceRotation = displayRotationDegrees,
-            rotationOffset = settings.rotationOffsetDegrees,
             detectionAvailable = plan.useAnalysisStream,
             message = plan.note,
             bufferBytes = newRecorder.estimatedVideoBufferBytes.toLong(),
@@ -453,19 +388,9 @@ class CaptureEngine(
         }
     }
 
-    /**
-     * The camera whose sensor actually produces the frames.
-     *
-     * Streaming from a physical sub-camera means the frames come off *that* sensor, and its mounting
-     * can differ from the logical camera's — taking the orientation from the logical one leaves the
-     * viewfinder and the saved file a quarter turn out on the devices where they disagree.
-     */
-    private fun frameSourceFor(descriptor: CameraDescriptor): CameraDescriptor =
-        settings.physicalCameraId?.let { capabilities.descriptor(it) } ?: descriptor
-
     private val sessionListener = object : Camera2Session.Listener {
         override fun onSessionReady(descriptor: CameraDescriptor) {
-            activeDescriptor = frameSourceFor(descriptor)
+            activeDescriptor = descriptor
             _status.value = _status.value.copy(lifecycle = CaptureLifecycle.RUNNING, error = null)
         }
 

@@ -46,13 +46,13 @@ class ObjectTrackingDetector : AutoCloseable {
 
     fun analyze(
         image: Image,
-        displayRoi: RoiRect,
-        rotationDegrees: Int,
+        roi: RoiRect,
         sensitivity: Float,
     ): DetectionOutcome {
-        val objects = runDetector(image, rotationDegrees) ?: return DetectionOutcome()
+        val objects = runDetector(image) ?: return DetectionOutcome()
 
-        val (frameWidth, frameHeight) = rotatedDimensions(image, rotationDegrees)
+        val frameWidth = image.width
+        val frameHeight = image.height
         if (frameWidth <= 0 || frameHeight <= 0) return DetectionOutcome()
 
         val minOverlap = lerp(0.35f, 0.08f, sensitivity)
@@ -73,7 +73,7 @@ class ObjectTrackingDetector : AutoCloseable {
             )
             boxes += box
 
-            val overlap = displayRoi.overlapFractionOf(box)
+            val overlap = roi.overlapFractionOf(box)
             if (overlap < minOverlap) continue
 
             val id = obj.trackingId ?: -1
@@ -110,8 +110,8 @@ class ObjectTrackingDetector : AutoCloseable {
         )
     }
 
-    private fun runDetector(image: Image, rotationDegrees: Int): List<DetectedObject>? = try {
-        val input = InputImage.fromMediaImage(image, rotationDegrees)
+    private fun runDetector(image: Image): List<DetectedObject>? = try {
+        val input = InputImage.fromMediaImage(image, 0)
         Tasks.await(detector.process(input), ML_TIMEOUT_MS, TimeUnit.MILLISECONDS)
     } catch (t: Throwable) {
         Log.w(TAG, "object detection failed", t)
@@ -137,13 +137,13 @@ class PersonPoseDetector : AutoCloseable {
 
     fun analyze(
         image: Image,
-        displayRoi: RoiRect,
-        rotationDegrees: Int,
+        roi: RoiRect,
         sensitivity: Float,
     ): DetectionOutcome {
-        val pose = runDetector(image, rotationDegrees) ?: return DetectionOutcome()
+        val pose = runDetector(image) ?: return DetectionOutcome()
 
-        val (frameWidth, frameHeight) = rotatedDimensions(image, rotationDegrees)
+        val frameWidth = image.width
+        val frameHeight = image.height
         if (frameWidth <= 0 || frameHeight <= 0) return DetectionOutcome()
 
         val minLikelihood = lerp(0.7f, 0.25f, sensitivity)
@@ -175,9 +175,9 @@ class PersonPoseDetector : AutoCloseable {
             height = ((maxY - minY) / frameHeight).coerceIn(0f, 1f),
         )
 
-        val overlap = displayRoi.overlapFractionOf(box)
-        val centerInside = box.centerX in displayRoi.left..displayRoi.right &&
-            box.centerY in displayRoi.top..displayRoi.bottom
+        val overlap = roi.overlapFractionOf(box)
+        val centerInside = box.centerX in roi.left..roi.right &&
+            box.centerY in roi.top..roi.bottom
 
         return DetectionOutcome(
             hit = overlap >= minOverlap || centerInside,
@@ -187,8 +187,8 @@ class PersonPoseDetector : AutoCloseable {
         )
     }
 
-    private fun runDetector(image: Image, rotationDegrees: Int): Pose? = try {
-        val input = InputImage.fromMediaImage(image, rotationDegrees)
+    private fun runDetector(image: Image): Pose? = try {
+        val input = InputImage.fromMediaImage(image, 0)
         Tasks.await(detector.process(input), ML_TIMEOUT_MS, TimeUnit.MILLISECONDS)
     } catch (t: Throwable) {
         Log.w(TAG, "pose detection failed", t)
@@ -201,11 +201,3 @@ class PersonPoseDetector : AutoCloseable {
 }
 
 /** ML Kit reports coordinates in the upright frame, so 90/270 swap width and height. */
-private fun rotatedDimensions(image: Image, rotationDegrees: Int): Pair<Int, Int> {
-    val normalised = ((rotationDegrees % 360) + 360) % 360
-    return if (normalised == 90 || normalised == 270) {
-        image.height to image.width
-    } else {
-        image.width to image.height
-    }
-}

@@ -60,20 +60,14 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
 
     fun selectLens(option: LensOption) {
         update { current ->
-            current.copy(
-                cameraId = option.cameraId,
-                physicalCameraId = option.physicalCameraId,
-                zoomRatio = option.zoomRatio,
-            )
+            current.copy(cameraId = option.cameraId, zoomRatio = option.zoomRatio)
         }
     }
 
     fun currentLens(): LensOption? {
         val s = _settings.value
         return lensOptions.firstOrNull {
-            it.cameraId == s.cameraId &&
-                it.physicalCameraId == s.physicalCameraId &&
-                abs(it.zoomRatio - s.zoomRatio) < 0.05f
+            it.cameraId == s.cameraId && abs(it.zoomRatio - s.zoomRatio) < 0.05f
         }
     }
 
@@ -107,9 +101,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         _settings.value = next
         engine.setLensLabel(
             lensOptions.firstOrNull {
-                it.cameraId == next.cameraId &&
-                    it.physicalCameraId == next.physicalCameraId &&
-                    abs(it.zoomRatio - next.zoomRatio) < 0.05f
+                it.cameraId == next.cameraId && abs(it.zoomRatio - next.zoomRatio) < 0.05f
             }?.label ?: (next.cameraId ?: "unknown"),
         )
         engine.updateSettings(next)
@@ -186,12 +178,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
                 evCompensationSteps = s.evCompensationSteps
                     .coerceIn(descriptor.evRange.lower, descriptor.evRange.upper),
             )
-
-            if (s.physicalCameraId != null &&
-                descriptor.physicalCameraIds.none { it == s.physicalCameraId }
-            ) {
-                s = s.copy(physicalCameraId = null)
-            }
         }
 
         val preRoll = s.preRollSec.coerceIn(1f, 15f)

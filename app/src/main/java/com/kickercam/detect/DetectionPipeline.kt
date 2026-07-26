@@ -38,8 +38,7 @@ class DetectionPipeline(
 
     @Volatile private var mode: DetectorMode = DetectorMode.MOTION
     @Volatile private var sensitivity: Float = 0.5f
-    @Volatile private var displayRoi: RoiRect = RoiRect.Default
-    @Volatile private var displayRotation: Int = 0
+    @Volatile private var roi: RoiRect = RoiRect.Default
     @Volatile private var enabled: Boolean = true
     @Volatile private var lastAnalysisAtMs: Long = 0L
 
@@ -58,13 +57,11 @@ class DetectionPipeline(
         mode: DetectorMode,
         sensitivity: Float,
         roi: RoiRect,
-        displayRotation: Int,
     ) {
         val modeChanged = this.mode != mode
         this.mode = mode
         this.sensitivity = sensitivity
-        this.displayRoi = roi
-        this.displayRotation = displayRotation
+        this.roi = roi
 
         // Only pay for the ML models that the chosen mode actually needs.
         val needsObject = mode == DetectorMode.OBJECT
@@ -139,26 +136,26 @@ class DetectionPipeline(
     }
 
     private fun analyze(image: Image): DetectionOutcome {
-        val roiDisplay = displayRoi
-        val rotation = displayRotation
-        val roiImage = RoiMapper.displayToImage(roiDisplay, rotation)
+        // The frames arrive the same way round as they are shown, so the box needs no mapping: a
+        // fraction of the viewfinder is the same fraction of the analysis frame.
+        val box = roi
 
         return when (mode) {
             DetectorMode.MOTION ->
-                motionDetector.analyze(image, roiImage, rotation, sensitivity)
+                motionDetector.analyze(image, box, sensitivity)
 
             DetectorMode.OBJECT ->
-                objectDetector?.analyze(image, roiDisplay, rotation, sensitivity) ?: DetectionOutcome()
+                objectDetector?.analyze(image, box, sensitivity) ?: DetectionOutcome()
 
             DetectorMode.POSE ->
-                poseDetector?.analyze(image, roiDisplay, rotation, sensitivity) ?: DetectionOutcome()
+                poseDetector?.analyze(image, box, sensitivity) ?: DetectionOutcome()
 
             DetectorMode.MOTION_THEN_POSE -> {
-                val motion = motionDetector.analyze(image, roiImage, rotation, sensitivity)
+                val motion = motionDetector.analyze(image, box, sensitivity)
                 if (!motion.hit) {
                     motion.copy(label = motion.label ?: "waiting for motion")
                 } else {
-                    val pose = poseDetector?.analyze(image, roiDisplay, rotation, sensitivity)
+                    val pose = poseDetector?.analyze(image, box, sensitivity)
                     if (pose == null) {
                         motion
                     } else {

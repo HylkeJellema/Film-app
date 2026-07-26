@@ -69,16 +69,17 @@ than starting a new one, up to the maximum clip length.
 
 ## Lens selection
 
-Reaching a specific physical lens on Android is genuinely device-dependent, so the app offers three
-routes and labels each one with its 35mm-equivalent focal length and computed zoom factor:
+Reaching a specific lens on Android is genuinely device-dependent, so the app offers two routes and
+labels each one with its 35mm-equivalent focal length and computed zoom factor:
 
 1. **Direct camera ids** — every camera the platform lists, labelled `Ultra-wide 0.6x`, `Main 1.0x`,
    `Tele 5.0x` and so on. Most direct route; Samsung exposes its tele modules this way.
 2. **Zoom presets on the main camera** (`Main @ 5.0x`) — drives `CONTROL_ZOOM_RATIO` and lets the
    phone's own HAL switch to the matching physical lens. **On Samsung hardware this is the most
    reliable way to actually land on the 5x tele**, so try it first if a direct id misbehaves.
-3. **Physical sub-camera ids** — marked experimental. Streams straight from a logical camera's
-   sub-camera. Works on fewer devices and usually caps resolution at 1080p.
+
+Streaming straight from a physical sub-camera was a third route. It worked on few devices, capped the
+resolution, and reported a sensor mounting that did not match the frames it produced — so it is gone.
 
 There is also a continuous zoom slider on the viewfinder for anything in between.
 
@@ -107,7 +108,7 @@ You asked whether a package already does this. For the camera settings alone, Ca
 `Camera2Interop` would get most of the way there. The blocker is the rolling buffer: this app needs a
 raw `MediaCodec` input surface it can encode into continuously and mux out of retroactively, and
 CameraX's `VideoCapture` deliberately owns its recording pipeline and will not hand that over. Since
-Camera2 was needed anyway, it also gives unrestricted manual sensor control and direct physical-lens
+Camera2 was needed anyway, it also gives unrestricted manual sensor control and direct lens
 addressing for free. So: Camera2 directly, ML Kit for the AI, Media3/ExoPlayer for playback.
 
 ---
@@ -149,9 +150,17 @@ lively, lower the sensitivity or shrink the box.
   disables automatic detection and tells you so, leaving *Save now* working. It never fails silently.
 - **arm64 only.** The bundled ML native libraries are most of the APK, and shipping four ABIs
   quadrupled it for no benefit — every phone this targets is arm64.
-- **Locked to landscape**, both ways round. Orientation comes from the accelerometer, not from
-  `Display.getRotation()` — a fixed-orientation activity never actually rotates its display, so the
-  display rotation would report the natural orientation and skew every frame by a quarter turn.
+- **Locked to landscape, and the viewfinder applies no rotation at all.** The camera hands over
+  landscape frames and the app is landscape, so the only thing that has to be right is the shape of
+  the view: it is given the buffer's aspect ratio, which makes TextureView's own fill-the-view
+  behaviour a uniform scale, and what the frames do not cover stays black. This is what
+  `AutoFitTextureView` does in Google's Camera2 samples.
+
+  Deriving the rotation from `SENSOR_ORIENTATION` and the display or the accelerometer was tried at
+  length and produced, in turn, a stretched preview, a preview a quarter turn out, and one clamped
+  into a square. On the device this was tested against, `SENSOR_ORIENTATION` did not agree with the
+  frames actually delivered, so there was no angle to compute that would have been right. Showing the
+  frames as they arrive has no such failure mode.
 - **Audio** is buffered alongside the video and muxed into the clip. If the mic permission is denied,
   clips are simply silent.
 

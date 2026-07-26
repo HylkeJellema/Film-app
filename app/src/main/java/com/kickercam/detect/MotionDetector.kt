@@ -25,14 +25,10 @@ class MotionDetector {
         warmupFrames = 0
     }
 
-    /**
-     * @param imageRoi the box in analysis-image space
-     * @param displayRotation rotation from image space to display space, for reporting boxes back
-     */
+    /** @param roi the box, as a fraction of the frame — the same fraction the viewfinder shows. */
     fun analyze(
         image: Image,
-        imageRoi: RoiRect,
-        displayRotation: Int,
+        roi: RoiRect,
         sensitivity: Float,
     ): DetectionOutcome {
         sampleLuma(image, current)
@@ -65,8 +61,8 @@ class MotionDetector {
                 diff[i] = d
 
                 val cellCenterX = (x + 0.5f) / GRID_W
-                val inside = cellCenterX >= imageRoi.left && cellCenterX < imageRoi.right &&
-                    cellCenterY >= imageRoi.top && cellCenterY < imageRoi.bottom
+                val inside = cellCenterX >= roi.left && cellCenterX < roi.right &&
+                    cellCenterY >= roi.top && cellCenterY < roi.bottom
 
                 if (inside) {
                     insideCount++
@@ -120,7 +116,7 @@ class MotionDetector {
                 width = (maxX - minX + 1).toFloat() / GRID_W,
                 height = (maxY - minY + 1).toFloat() / GRID_H,
             )
-            listOf(RoiMapper.imageToDisplay(imageBox, displayRotation))
+            listOf(imageBox)
         } else {
             emptyList()
         }

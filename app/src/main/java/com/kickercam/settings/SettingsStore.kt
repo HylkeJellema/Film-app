@@ -20,7 +20,6 @@ class SettingsStore(private val context: Context) {
 
     private object Keys {
         val cameraId = stringPreferencesKey("camera_id")
-        val physicalCameraId = stringPreferencesKey("physical_camera_id")
         val zoomRatio = floatPreferencesKey("zoom_ratio")
         val widthPx = intPreferencesKey("width_px")
         val heightPx = intPreferencesKey("height_px")
@@ -29,8 +28,6 @@ class SettingsStore(private val context: Context) {
         val codec = stringPreferencesKey("codec")
         val audioEnabled = booleanPreferencesKey("audio_enabled")
         val stabilisation = booleanPreferencesKey("stabilisation")
-
-        val rotationOffset = intPreferencesKey("rotation_offset_degrees")
         val preRollSec = floatPreferencesKey("pre_roll_sec")
         val postRollSec = floatPreferencesKey("post_roll_sec")
         val maxClipSec = floatPreferencesKey("max_clip_sec")
@@ -59,7 +56,6 @@ class SettingsStore(private val context: Context) {
         val d = AppSettings()
         AppSettings(
             cameraId = p[Keys.cameraId],
-            physicalCameraId = p[Keys.physicalCameraId],
             zoomRatio = p[Keys.zoomRatio] ?: d.zoomRatio,
             widthPx = p[Keys.widthPx] ?: d.widthPx,
             heightPx = p[Keys.heightPx] ?: d.heightPx,
@@ -68,7 +64,6 @@ class SettingsStore(private val context: Context) {
             codec = p[Keys.codec]?.let { runCatching { VideoCodecOption.valueOf(it) }.getOrNull() } ?: d.codec,
             audioEnabled = p[Keys.audioEnabled] ?: d.audioEnabled,
             stabilisation = p[Keys.stabilisation] ?: d.stabilisation,
-            rotationOffsetDegrees = p[Keys.rotationOffset] ?: d.rotationOffsetDegrees,
             preRollSec = p[Keys.preRollSec] ?: d.preRollSec,
             postRollSec = p[Keys.postRollSec] ?: d.postRollSec,
             maxClipSec = p[Keys.maxClipSec] ?: d.maxClipSec,
@@ -99,7 +94,6 @@ class SettingsStore(private val context: Context) {
     suspend fun update(s: AppSettings) {
         context.dataStore.edit { p ->
             s.cameraId?.let { p[Keys.cameraId] = it } ?: p.remove(Keys.cameraId)
-            s.physicalCameraId?.let { p[Keys.physicalCameraId] = it } ?: p.remove(Keys.physicalCameraId)
             p[Keys.zoomRatio] = s.zoomRatio
             p[Keys.widthPx] = s.widthPx
             p[Keys.heightPx] = s.heightPx
@@ -108,7 +102,6 @@ class SettingsStore(private val context: Context) {
             p[Keys.codec] = s.codec.name
             p[Keys.audioEnabled] = s.audioEnabled
             p[Keys.stabilisation] = s.stabilisation
-            p[Keys.rotationOffset] = s.rotationOffsetDegrees
             p[Keys.preRollSec] = s.preRollSec
             p[Keys.postRollSec] = s.postRollSec
             p[Keys.maxClipSec] = s.maxClipSec

@@ -40,7 +40,6 @@ data class CameraDescriptor(
     val hasEis: Boolean,
     val evRange: Range<Int>,
     val evStep: Double,
-    val physicalCameraIds: Set<String>,
     val timestampIsRealtime: Boolean,
 ) {
     val isBackFacing: Boolean get() = facing == CameraCharacteristics.LENS_FACING_BACK
@@ -77,24 +76,24 @@ data class CameraDescriptor(
 /**
  * One selectable entry in the lens picker.
  *
- * Reaching a specific physical lens on Android is device dependent, so three routes are offered:
- *  - [isZoomPreset] `false`, [physicalCameraId] `null` — a top-level camera id. Most direct route;
- *    Samsung exposes the tele modules this way.
+ * Reaching a specific lens on Android is device dependent, so two routes are offered:
+ *  - [isZoomPreset] `false` — a top-level camera id. Most direct route; Samsung exposes the tele
+ *    modules this way.
  *  - [isZoomPreset] `true` — the main logical camera driven to a zoom ratio. The HAL picks the
  *    matching physical lens itself; this is the most reliable way to land on the 5x on Samsung.
- *  - [physicalCameraId] non-null — explicitly stream from a physical sub-camera of a logical
- *    camera. Works on fewer devices and caps resolution, so it is marked experimental.
+ *
+ * Streaming directly from a physical sub-camera was a third route. It worked on few devices, capped
+ * the resolution, and reported a sensor mounting that did not match the frames it produced, so it is
+ * gone.
  */
 data class LensOption(
     val key: String,
     val cameraId: String,
-    val physicalCameraId: String?,
     val zoomRatio: Float,
     val label: String,
     val detail: String,
     val facing: Int,
     val isZoomPreset: Boolean,
-    val experimental: Boolean,
 )
 
 class CameraCapabilities(context: Context) {
@@ -114,21 +113,8 @@ class CameraCapabilities(context: Context) {
         }
     }
 
-    /** Physical sub-cameras, keyed by their own id. Not present in [cameras]. */
-    val physicalCameras: Map<String, CameraDescriptor> = buildMap {
-        for (logical in cameras) {
-            for (physicalId in logical.physicalCameraIds) {
-                if (cameras.any { it.cameraId == physicalId }) continue
-                runCatching { describe(physicalId) }
-                    .onFailure { Log.w(TAG, "Cannot describe physical camera $physicalId", it) }
-                    .getOrNull()
-                    ?.let { put(physicalId, it) }
-            }
-        }
-    }
-
     fun descriptor(cameraId: String?): CameraDescriptor? =
-        cameras.firstOrNull { it.cameraId == cameraId } ?: physicalCameras[cameraId]
+        cameras.firstOrNull { it.cameraId == cameraId }
 
     /** The camera that acts as "1x": the first back-facing camera the platform reports. */
     val referenceBackCamera: CameraDescriptor? =
@@ -167,7 +153,6 @@ class CameraCapabilities(context: Context) {
                 LensOption(
                     key = "cam:${cam.cameraId}",
                     cameraId = cam.cameraId,
-                    physicalCameraId = null,
                     zoomRatio = 1f,
                     label = listOfNotNull(facingName, zoomText).joinToString(" "),
                     detail = buildString {
@@ -178,7 +163,6 @@ class CameraCapabilities(context: Context) {
                     },
                     facing = cam.facing,
                     isZoomPreset = false,
-                    experimental = false,
                 ),
             )
         }
@@ -197,36 +181,12 @@ class CameraCapabilities(context: Context) {
                     LensOption(
                         key = "zoom:${main.cameraId}:${formatZoom(ratio)}",
                         cameraId = main.cameraId,
-                        physicalCameraId = null,
                         zoomRatio = ratio,
                         label = "Main @ ${formatZoom(ratio)}",
                         detail = "Main camera driven to ${formatZoom(ratio)} — the phone picks the " +
                             "matching lens itself. Most reliable route to the tele module.",
                         facing = main.facing,
                         isZoomPreset = true,
-                        experimental = false,
-                    ),
-                )
-            }
-        }
-
-        // 3. Explicit physical sub-cameras (experimental).
-        for (logical in cameras) {
-            for (physicalId in logical.physicalCameraIds) {
-                val phys = physicalCameras[physicalId] ?: continue
-                val zoom = relativeZoom(phys)
-                add(
-                    LensOption(
-                        key = "phys:${logical.cameraId}:$physicalId",
-                        cameraId = logical.cameraId,
-                        physicalCameraId = physicalId,
-                        zoomRatio = 1f,
-                        label = "Physical $physicalId" + (zoom?.let { " ${formatZoom(it)}" } ?: ""),
-                        detail = "Streams directly from sub-camera $physicalId of logical " +
-                            "camera ${logical.cameraId}. Resolution is usually capped at 1080p.",
-                        facing = phys.facing,
-                        isZoomPreset = false,
-                        experimental = true,
                     ),
                 )
             }
@@ -283,7 +243,6 @@ class CameraCapabilities(context: Context) {
             Range(1f, 1f)
         }
 
-        val physicalIds = runCatching { c.physicalCameraIds }.getOrDefault(emptySet())
 
         val oisModes = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION)
             ?.toList().orEmpty()
@@ -317,7 +276,6 @@ class CameraCapabilities(context: Context) {
             hasEis = eisModes.any { it != CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_OFF },
             evRange = c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE) ?: Range(0, 0),
             evStep = evStep,
-            physicalCameraIds = physicalIds,
             timestampIsRealtime = c.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
                 CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME,
         )

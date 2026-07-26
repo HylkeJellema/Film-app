@@ -114,17 +114,7 @@ private fun LensSection(viewModel: CameraViewModel, settings: AppSettings) {
                         onClick = { viewModel.selectLens(option) },
                     )
                     Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(option.label, fontWeight = FontWeight.Medium)
-                            if (option.experimental) {
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    "experimental",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = KickerOrange,
-                                )
-                            }
-                        }
+                        Text(option.label, fontWeight = FontWeight.Medium)
                         Text(
                             option.detail,
                             style = MaterialTheme.typography.bodySmall,
@@ -190,24 +180,6 @@ private fun VideoSection(viewModel: CameraViewModel, settings: AppSettings) {
             description = "AAC track muxed alongside the video, buffered the same way.",
             checked = settings.audioEnabled,
             onChange = { checked -> viewModel.update { it.copy(audioEnabled = checked) } },
-        )
-
-        Spacer(Modifier.height(8.dp))
-        Label("Rotation correction")
-        ChipRow(
-            items = listOf(0, 90, 180, 270),
-            isSelected = { it == settings.rotationOffsetDegrees },
-            label = { if (it == 0) "None" else "+$it°" },
-            onSelect = { degrees -> viewModel.update { it.copy(rotationOffsetDegrees = degrees) } },
-        )
-        Text(
-            "Rotation is derived from the lens mounting and the window's orientation, which a few " +
-                "devices report wrongly. If the viewfinder comes up turned, add the correction that " +
-                "makes it upright — being an offset rather than a fixed angle, it stays right when " +
-                "you turn the phone. It applies to saved clips and the detection box too, and the " +
-                "HUD shows what is being applied.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         SwitchRow(

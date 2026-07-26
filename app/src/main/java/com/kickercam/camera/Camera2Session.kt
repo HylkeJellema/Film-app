@@ -31,7 +31,6 @@ private const val TAG = "Camera2Session"
 /** Everything needed to bring a session up. */
 data class SessionRequest(
     val cameraId: String,
-    val physicalCameraId: String?,
     val previewSurface: Surface,
     val recordSurface: Surface,
     val analysisSurface: Surface?,
@@ -53,8 +52,7 @@ data class SensorReadout(
  * Thin, explicit wrapper around Camera2.
  *
  * Camera2 rather than CameraX because this app needs two things CameraX will not give up: a raw
- * encoder input surface to drive the rolling buffer, and unrestricted manual sensor control plus
- * direct physical-lens addressing.
+ * encoder input surface to drive the rolling buffer, and unrestricted manual sensor control.
  */
 class Camera2Session(
     context: Context,
@@ -193,14 +191,7 @@ class Camera2Session(
 
     private fun configureSession(camera: CameraDevice, req: SessionRequest) {
         val surfaces = listOfNotNull(req.previewSurface, req.recordSurface, req.analysisSurface)
-        val outputs = surfaces.map { surface ->
-            OutputConfiguration(surface).apply {
-                if (req.physicalCameraId != null) {
-                    runCatching { setPhysicalCameraId(req.physicalCameraId) }
-                        .onFailure { Log.w(TAG, "physical camera id rejected", it) }
-                }
-            }
-        }
+        val outputs = surfaces.map { surface -> OutputConfiguration(surface) }
 
         val callback = object : CameraCaptureSession.StateCallback() {
             override fun onConfigured(configured: CameraCaptureSession) {
@@ -377,37 +368,5 @@ class Camera2Session(
             return Size(targetWidth, height.coerceAtLeast(360))
         }
 
-        /**
-         * Rotation from analysis/sensor space to what the user sees, given the sensor mounting and the
-         * current display rotation.
-         */
-        /**
-         * The rotation to apply: the derived one, plus a correction for devices where the derivation
-         * is wrong.
-         *
-         * The correction is an *offset*, not a fixed angle, because the error it corrects is fixed
-         * while the right answer is not. A device that reports `SENSOR_ORIENTATION` 90 but delivers
-         * frames as though it were 270 is wrong by half a turn in every orientation, so half a turn
-         * added to the derivation fixes it everywhere. Pinning the rotation to one absolute angle can
-         * only ever be right in one orientation, and turning the phone breaks it again.
-         */
-        fun effectiveRotationDegrees(
-            offsetDegrees: Int,
-            sensorOrientation: Int,
-            displayRotationDegrees: Int,
-            facing: Int,
-        ): Int {
-            val derived = displayRotationDegrees(sensorOrientation, displayRotationDegrees, facing)
-            return ((derived + offsetDegrees) % 360 + 360) % 360
-        }
-
-        fun displayRotationDegrees(sensorOrientation: Int, displayRotationDegrees: Int, facing: Int): Int {
-            val normalised = if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
-                (sensorOrientation + displayRotationDegrees) % 360
-            } else {
-                (sensorOrientation - displayRotationDegrees + 360) % 360
-            }
-            return normalised
-        }
     }
 }

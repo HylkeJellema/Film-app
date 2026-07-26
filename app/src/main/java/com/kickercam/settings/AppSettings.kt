@@ -79,7 +79,6 @@ enum class AwbOption(val label: String, val mode: Int) {
 data class AppSettings(
     // ---- Lens ----
     val cameraId: String? = null,
-    val physicalCameraId: String? = null,
     val zoomRatio: Float = 1f,
 
     // ---- Video format ----
@@ -90,15 +89,6 @@ data class AppSettings(
     val codec: VideoCodecOption = VideoCodecOption.H264,
     val audioEnabled: Boolean = true,
     val stabilisation: Boolean = true,
-
-    /**
-     * Correction added to the derived rotation, in degrees, for devices where the derivation is wrong.
-     *
-     * An offset rather than a fixed angle: the error is constant while the correct rotation changes
-     * with the phone, so pinning one absolute angle is only ever right in one orientation. It applies
-     * to the viewfinder, the clip's orientation hint and the detector's coordinate mapping alike.
-     */
-    val rotationOffsetDegrees: Int = 0,
 
     // ---- Clip timing ----
     val preRollSec: Float = 5f,
