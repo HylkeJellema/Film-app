@@ -111,4 +111,33 @@ class PreviewOrientationTest {
         assertEquals(16f / 9f, bufferAspectRatio(0, 0), 1e-4f)
         assertEquals(16f / 9f, bufferAspectRatio(1920, 0), 1e-4f)
     }
+
+    // ------------------------------------------------------------------ manual override
+
+    @Test
+    fun `no override leaves the automatic result alone`() {
+        assertEquals(
+            backRotation(sensorOrientation = 90, deviceDegrees = 90),
+            Camera2Session.effectiveRotationDegrees(null, 90, 90, LENS_FACING_BACK),
+        )
+    }
+
+    @Test
+    fun `an override wins over whatever the sensor and the phone say`() {
+        for (sensor in listOf(0, 90, 180, 270)) {
+            for (device in listOf(0, 90, 180, 270)) {
+                assertEquals(
+                    270,
+                    Camera2Session.effectiveRotationDegrees(270, sensor, device, LENS_FACING_BACK),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `an override is normalised like any other rotation`() {
+        assertEquals(90, Camera2Session.effectiveRotationDegrees(450, 90, 90, LENS_FACING_BACK))
+        assertEquals(270, Camera2Session.effectiveRotationDegrees(-90, 90, 90, LENS_FACING_BACK))
+        assertEquals(0, Camera2Session.effectiveRotationDegrees(0, 90, 0, LENS_FACING_BACK))
+    }
 }

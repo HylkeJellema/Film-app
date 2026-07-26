@@ -192,6 +192,22 @@ private fun VideoSection(viewModel: CameraViewModel, settings: AppSettings) {
             onChange = { checked -> viewModel.update { it.copy(audioEnabled = checked) } },
         )
 
+        Spacer(Modifier.height(8.dp))
+        Label("Viewfinder rotation")
+        ChipRow(
+            items = listOf(null, 0, 90, 180, 270),
+            isSelected = { it == settings.rotationOverrideDegrees },
+            label = { if (it == null) "Auto" else "$it°" },
+            onSelect = { degrees -> viewModel.update { it.copy(rotationOverrideDegrees = degrees) } },
+        )
+        Text(
+            "Auto derives it from the lens mounting and the phone's orientation. If the viewfinder " +
+                "comes up on its side, pick the turn that makes it upright — it applies to saved " +
+                "clips and the detection box as well. The HUD shows what is being applied.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
         SwitchRow(
             label = "Stabilisation",
             description = "Optical when the lens has it, electronic otherwise. " +

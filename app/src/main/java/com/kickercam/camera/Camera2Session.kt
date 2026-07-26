@@ -381,6 +381,21 @@ class Camera2Session(
          * Rotation from analysis/sensor space to what the user sees, given the sensor mounting and the
          * current display rotation.
          */
+        /**
+         * The rotation to apply, honouring a manual override when one is set.
+         *
+         * The automatic path can only be as good as `SENSOR_ORIENTATION` and the orientation the
+         * accelerometer reports, and neither is reliable on every device — an override is the only
+         * way for someone holding the phone to settle it.
+         */
+        fun effectiveRotationDegrees(
+            overrideDegrees: Int?,
+            sensorOrientation: Int,
+            displayRotationDegrees: Int,
+            facing: Int,
+        ): Int = overrideDegrees?.let { ((it % 360) + 360) % 360 }
+            ?: displayRotationDegrees(sensorOrientation, displayRotationDegrees, facing)
+
         fun displayRotationDegrees(sensorOrientation: Int, displayRotationDegrees: Int, facing: Int): Int {
             val normalised = if (facing == CameraCharacteristics.LENS_FACING_FRONT) {
                 (sensorOrientation + displayRotationDegrees) % 360

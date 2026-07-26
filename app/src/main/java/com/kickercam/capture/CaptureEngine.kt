@@ -43,6 +43,10 @@ data class CaptureStatus(
     val effectiveSize: Size = Size(1920, 1080),
     val effectiveFps: Int = 60,
     val previewRotation: Int = 0,
+    /** Inputs the rotation was derived from, surfaced so a wrong viewfinder can be diagnosed on the spot. */
+    val sensorOrientation: Int = 0,
+    val deviceRotation: Int = 0,
+    val rotationIsManual: Boolean = false,
     val detectionAvailable: Boolean = true,
     val readout: SensorReadout = SensorReadout(),
     val message: String? = null,
@@ -121,7 +125,13 @@ class CaptureEngine(
         displayRotationDegrees = degrees
 
         val descriptor = activeDescriptor ?: return
-        val rotation = Camera2Session.displayRotationDegrees(
+        applyRotation(descriptor, degrees)
+    }
+
+    /** Recomputes the rotation from the current inputs and pushes it everywhere it is used. */
+    private fun applyRotation(descriptor: CameraDescriptor, degrees: Int) {
+        val rotation = Camera2Session.effectiveRotationDegrees(
+            overrideDegrees = settings.rotationOverrideDegrees,
             sensorOrientation = descriptor.sensorOrientation,
             displayRotationDegrees = degrees,
             facing = descriptor.facing,
@@ -133,7 +143,12 @@ class CaptureEngine(
             roi = settings.roi,
             displayRotation = rotation,
         )
-        _status.value = _status.value.copy(previewRotation = rotation)
+        _status.value = _status.value.copy(
+            previewRotation = rotation,
+            sensorOrientation = descriptor.sensorOrientation,
+            deviceRotation = degrees,
+            rotationIsManual = settings.rotationOverrideDegrees != null,
+        )
     }
 
     fun setLensLabel(label: String) {
@@ -158,6 +173,10 @@ class CaptureEngine(
             roi = next.roi,
             displayRotation = _status.value.previewRotation,
         )
+
+        if (previous.rotationOverrideDegrees != next.rotationOverrideDegrees) {
+            activeDescriptor?.let { applyRotation(it, displayRotationDegrees) }
+        }
 
         if (_status.value.lifecycle != CaptureLifecycle.RUNNING) return
 
@@ -279,7 +298,8 @@ class CaptureEngine(
         target.setBufferSize(plan.size)
 
         val frameSource = frameSourceFor(descriptor)
-        val rotation = Camera2Session.displayRotationDegrees(
+        val rotation = Camera2Session.effectiveRotationDegrees(
+            overrideDegrees = settings.rotationOverrideDegrees,
             sensorOrientation = frameSource.sensorOrientation,
             displayRotationDegrees = displayRotationDegrees,
             facing = frameSource.facing,
@@ -343,6 +363,9 @@ class CaptureEngine(
             effectiveSize = plan.size,
             effectiveFps = plan.fps,
             previewRotation = rotation,
+            sensorOrientation = frameSource.sensorOrientation,
+            deviceRotation = displayRotationDegrees,
+            rotationIsManual = settings.rotationOverrideDegrees != null,
             detectionAvailable = plan.useAnalysisStream,
             message = plan.note,
             bufferBytes = newRecorder.estimatedVideoBufferBytes.toLong(),

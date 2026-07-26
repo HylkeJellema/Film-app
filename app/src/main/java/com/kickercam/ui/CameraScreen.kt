@@ -267,6 +267,18 @@ private fun TopHud(
             )
             Text(
                 text = buildString {
+                    // Rotation inputs, on screen on purpose: when the viewfinder comes up sideways
+                    // these three numbers are the whole diagnosis.
+                    append("rot sensor ${status.sensorOrientation}")
+                    append(" · phone ${status.deviceRotation}")
+                    append(" · applied ${status.previewRotation}")
+                    if (status.rotationIsManual) append(" (manual)")
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = KickerOrange,
+            )
+            Text(
+                text = buildString {
                     append("buffer ${"%.1f".format(status.bufferedSec)}s / ${settings.preRollSec.toInt()}s")
                     status.readout.zoomRatio?.let { append(" · zoom ${"%.1f".format(it)}x") }
                     status.readout.isoActual?.let { append(" · ISO $it") }

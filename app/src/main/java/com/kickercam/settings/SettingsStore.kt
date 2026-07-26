@@ -29,6 +29,9 @@ class SettingsStore(private val context: Context) {
         val codec = stringPreferencesKey("codec")
         val audioEnabled = booleanPreferencesKey("audio_enabled")
         val stabilisation = booleanPreferencesKey("stabilisation")
+
+        /** -1 means "derive it automatically"; DataStore has no nullable int. */
+        val rotationOverride = intPreferencesKey("rotation_override_degrees")
         val preRollSec = floatPreferencesKey("pre_roll_sec")
         val postRollSec = floatPreferencesKey("post_roll_sec")
         val maxClipSec = floatPreferencesKey("max_clip_sec")
@@ -66,6 +69,7 @@ class SettingsStore(private val context: Context) {
             codec = p[Keys.codec]?.let { runCatching { VideoCodecOption.valueOf(it) }.getOrNull() } ?: d.codec,
             audioEnabled = p[Keys.audioEnabled] ?: d.audioEnabled,
             stabilisation = p[Keys.stabilisation] ?: d.stabilisation,
+            rotationOverrideDegrees = p[Keys.rotationOverride]?.takeIf { it >= 0 },
             preRollSec = p[Keys.preRollSec] ?: d.preRollSec,
             postRollSec = p[Keys.postRollSec] ?: d.postRollSec,
             maxClipSec = p[Keys.maxClipSec] ?: d.maxClipSec,
@@ -105,6 +109,7 @@ class SettingsStore(private val context: Context) {
             p[Keys.codec] = s.codec.name
             p[Keys.audioEnabled] = s.audioEnabled
             p[Keys.stabilisation] = s.stabilisation
+            p[Keys.rotationOverride] = s.rotationOverrideDegrees ?: -1
             p[Keys.preRollSec] = s.preRollSec
             p[Keys.postRollSec] = s.postRollSec
             p[Keys.maxClipSec] = s.maxClipSec

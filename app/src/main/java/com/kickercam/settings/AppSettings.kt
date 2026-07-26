@@ -91,6 +91,16 @@ data class AppSettings(
     val audioEnabled: Boolean = true,
     val stabilisation: Boolean = true,
 
+    /**
+     * Forces the rotation applied to the viewfinder and written into the clip, in degrees, or null to
+     * derive it from the sensor mounting and the phone's orientation.
+     *
+     * An escape hatch for devices where those inputs cannot be trusted: it is the same value the
+     * automatic path computes, so it feeds the preview, the container's orientation hint and the
+     * detector's coordinate mapping alike.
+     */
+    val rotationOverrideDegrees: Int? = null,
+
     // ---- Clip timing ----
     val preRollSec: Float = 5f,
     val postRollSec: Float = 5f,
