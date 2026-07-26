@@ -47,6 +47,27 @@ data class CameraDescriptor(
 
     fun maxFps(size: Size): Int = maxFpsForSize[size] ?: 30
 
+    /**
+     * The size to record and preview at. Not configurable, on purpose.
+     *
+     * The shape is the sensor's own: whatever the largest size the camera advertises is shaped like,
+     * every size used here is shaped like too, so the viewfinder can simply take the frames' aspect
+     * ratio and be right. Offering a list to pick from is what let the app ask for a shape the sensor
+     * does not produce, and then draw the result in a box that did not match it.
+     *
+     * Within that shape it prefers something around 1080p: three simultaneous streams at the sensor's
+     * full size is what most devices refuse.
+     */
+    val videoSize: Size
+        get() {
+            val largest = videoSizes.firstOrNull() ?: return Size(1920, 1080)
+            val nativeAspect = largest.width.toFloat() / largest.height.toFloat()
+            val sameShape = videoSizes.filter {
+                abs(it.width.toFloat() / it.height.toFloat() - nativeAspect) < 0.02f
+            }
+            return sameShape.firstOrNull { it.width <= 1920 } ?: sameShape.lastOrNull() ?: largest
+        }
+
     fun fpsOptionsFor(size: Size): List<Int> {
         val cap = maxFps(size)
         return availableFps.filter { it <= cap }.ifEmpty { listOf(minOf(30, cap)) }
@@ -285,19 +306,12 @@ class CameraCapabilities(context: Context) {
         val raw = runCatching { map.getOutputSizes(MediaCodec::class.java) }.getOrNull()
             ?: runCatching { map.getOutputSizes(android.graphics.SurfaceTexture::class.java) }.getOrNull()
             ?: emptyArray()
+        // No aspect filtering: filtering shapes out of the list is how the app came to record in a
+        // shape the sensor does not produce. These are the sizes the camera says it has.
         return raw
             .filter { it.width >= 640 && it.height >= 480 }
-            .filter { isCommonAspect(it) }
             .distinctBy { it.width to it.height }
             .sortedWith(compareByDescending<Size> { it.width.toLong() * it.height }.thenByDescending { it.width })
-    }
-
-    private fun isCommonAspect(size: Size): Boolean {
-        val ratio = size.width.toFloat() / size.height.toFloat()
-        return abs(ratio - 16f / 9f) < 0.04f ||
-            abs(ratio - 4f / 3f) < 0.04f ||
-            abs(ratio - 18f / 9f) < 0.04f ||
-            abs(ratio - 19.5f / 9f) < 0.06f
     }
 
     companion object {

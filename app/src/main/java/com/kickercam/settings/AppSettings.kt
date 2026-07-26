@@ -82,8 +82,6 @@ data class AppSettings(
     val zoomRatio: Float = 1f,
 
     // ---- Video format ----
-    val widthPx: Int = 1920,
-    val heightPx: Int = 1080,
     val fps: Int = 60,
     val bitrateMbps: Int = 40,
     val codec: VideoCodecOption = VideoCodecOption.H264,

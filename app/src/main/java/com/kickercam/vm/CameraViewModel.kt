@@ -86,12 +86,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     fun descriptorForCurrentLens(): CameraDescriptor? =
         capabilities.descriptor(_settings.value.cameraId ?: capabilities.defaultCameraId)
 
-    fun availableSizes(): List<Size> = descriptorForCurrentLens()?.videoSizes ?: emptyList()
+    /** The size the current camera will actually stream at. Chosen by the camera, not the user. */
+    fun videoSize(): Size = descriptorForCurrentLens()?.videoSize ?: Size(1920, 1080)
 
     fun availableFps(): List<Int> {
         val descriptor = descriptorForCurrentLens() ?: return listOf(30)
-        val s = _settings.value
-        return descriptor.fpsOptionsFor(Size(s.widthPx, s.heightPx))
+        return descriptor.fpsOptionsFor(descriptor.videoSize)
     }
 
     fun estimatedBufferBytes(): Long =
@@ -155,13 +155,7 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         var s = input.copy(cameraId = cameraId)
 
         if (descriptor != null) {
-            val sizes = descriptor.videoSizes
-            val requested = Size(s.widthPx, s.heightPx)
-            val size = sizes.firstOrNull { it.width == requested.width && it.height == requested.height }
-                ?: preferredSize(sizes)
-            if (size != null) s = s.copy(widthPx = size.width, heightPx = size.height)
-
-            val fpsChoices = descriptor.fpsOptionsFor(Size(s.widthPx, s.heightPx))
+            val fpsChoices = descriptor.fpsOptionsFor(descriptor.videoSize)
             val fps = fpsChoices.filter { it <= s.fps }.maxOrNull()
                 ?: fpsChoices.minOrNull()
                 ?: 30
@@ -195,9 +189,6 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         )
     }
 
-    /** 1080p is the sweet spot for three concurrent streams, so prefer it when available. */
-    private fun preferredSize(sizes: List<Size>): Size? =
-        sizes.firstOrNull { it.width == 1920 && it.height == 1080 } ?: sizes.firstOrNull()
 
     override fun onCleared() {
         engine.stop()

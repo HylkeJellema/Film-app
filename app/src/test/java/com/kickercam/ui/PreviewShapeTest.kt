@@ -14,15 +14,15 @@ class PreviewShapeTest {
 
     @Test
     fun `the view takes the frames' shape`() {
-        assertEquals(16f / 9f, bufferAspectRatio(1920, 1080), 1e-4f)
-        assertEquals(4f / 3f, bufferAspectRatio(1440, 1080), 1e-4f)
-        assertEquals(16f / 9f, bufferAspectRatio(3840, 2160), 1e-4f)
+        assertEquals(16f / 9f, aspectRatioOf(1920, 1080), 1e-4f)
+        assertEquals(4f / 3f, aspectRatioOf(1440, 1080), 1e-4f)
+        assertEquals(16f / 9f, aspectRatioOf(3840, 2160), 1e-4f)
     }
 
     @Test
     fun `a missing format falls back to 16 by 9 rather than dividing by zero`() {
-        assertEquals(16f / 9f, bufferAspectRatio(0, 0), 1e-4f)
-        assertEquals(16f / 9f, bufferAspectRatio(1920, 0), 1e-4f)
-        assertEquals(16f / 9f, bufferAspectRatio(0, 1080), 1e-4f)
+        assertEquals(16f / 9f, aspectRatioOf(0, 0), 1e-4f)
+        assertEquals(16f / 9f, aspectRatioOf(1920, 0), 1e-4f)
+        assertEquals(16f / 9f, aspectRatioOf(0, 1080), 1e-4f)
     }
 }

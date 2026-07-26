@@ -195,8 +195,6 @@ class CaptureEngine(
 
     private fun requiresRebuild(a: AppSettings, b: AppSettings): Boolean =
         a.cameraId != b.cameraId ||
-            a.widthPx != b.widthPx ||
-            a.heightPx != b.heightPx ||
             a.fps != b.fps ||
             a.bitrateMbps != b.bitrateMbps ||
             a.codec != b.codec ||
@@ -323,21 +321,20 @@ class CaptureEngine(
      * to configure. The user's request is honoured first; each fallback gives up as little as possible.
      */
     private fun buildPlan(descriptor: CameraDescriptor): Plan {
-        val requested = Size(settings.widthPx, settings.heightPx)
         val supported = descriptor.videoSizes
-        val size = supported.firstOrNull { it.width == requested.width && it.height == requested.height }
-            ?: supported.firstOrNull() ?: requested
+        val size = descriptor.videoSize
         val fps = settings.fps.coerceAtMost(descriptor.maxFps(size))
 
         return when (fallbackAttempt) {
             0 -> Plan(size, fps, useAnalysisStream = true, note = null)
 
             1 -> {
-                // Three simultaneous streams at the top resolution is the usual sticking point.
+                // Three simultaneous streams is the usual sticking point; step down within the same
+                // shape so the viewfinder's proportions do not change under the user.
                 val aspect = size.width.toFloat() / size.height.toFloat()
                 val smaller = supported.firstOrNull {
-                    it.width <= 1920 &&
-                        kotlin.math.abs(it.width.toFloat() / it.height.toFloat() - aspect) < 0.05f
+                    it.width <= 1280 &&
+                        kotlin.math.abs(it.width.toFloat() / it.height.toFloat() - aspect) < 0.02f
                 } ?: size
                 Plan(
                     smaller,

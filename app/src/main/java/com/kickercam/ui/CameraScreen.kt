@@ -118,7 +118,7 @@ fun CameraScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.Center)
-                .aspectRatio(bufferAspectRatio(status.effectiveSize)),
+                .aspectRatio(aspectRatioOf(status.effectiveSize)),
         ) {
             CameraPreview(
                 bufferSize = status.effectiveSize,

@@ -152,9 +152,21 @@ lively, lower the sensitivity or shrink the box.
   quadrupled it for no benefit — every phone this targets is arm64.
 - **Locked to landscape, and the viewfinder applies no rotation at all.** The camera hands over
   landscape frames and the app is landscape, so the only thing that has to be right is the shape of
-  the view: it is given the buffer's aspect ratio, which makes TextureView's own fill-the-view
-  behaviour a uniform scale, and what the frames do not cover stays black. This is what
-  `AutoFitTextureView` does in Google's Camera2 samples.
+  the view: it is given the stream's aspect ratio, which makes filling it a uniform scale, and what
+  the frames do not cover stays black. This is what the `AutoFit` views do in Google's Camera2
+  samples.
+
+  It is a **SurfaceView**, not a TextureView, for one decisive reason: its buffer size is whatever
+  `SurfaceHolder.setFixedSize` says. TextureView re-sets the buffer size to its own measured width and
+  height on every layout, so the camera ends up streaming at a size the app never asked for and the
+  device never advertised; the HAL substitutes whatever it does have, and a stream of one shape drawn
+  in a view of another is a stretched picture that no amount of layout fixes.
+
+- **The resolution is not configurable.** It is the camera's own: the largest size it advertises
+  decides the shape, and the app takes the biggest size of that shape up to 1080p, since three
+  simultaneous streams at a sensor's full size is what most devices refuse. Offering a list to choose
+  from is what let the app ask for a shape the sensor does not stream and then draw the result in a
+  box that did not match it.
 
   Deriving the rotation from `SENSOR_ORIENTATION` and the display or the accelerometer was tried at
   length and produced, in turn, a stretched preview, a preview a quarter turn out, and one clamped

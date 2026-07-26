@@ -129,18 +129,17 @@ private fun LensSection(viewModel: CameraViewModel, settings: AppSettings) {
 
 @Composable
 private fun VideoSection(viewModel: CameraViewModel, settings: AppSettings) {
-    val sizes = remember(settings.cameraId) { viewModel.availableSizes() }
-    val fpsOptions = remember(settings.cameraId, settings.widthPx, settings.heightPx) {
-        viewModel.availableFps()
-    }
+    val fpsOptions = remember(settings.cameraId) { viewModel.availableFps() }
+    val size = remember(settings.cameraId) { viewModel.videoSize() }
 
     Section("Video") {
         Label("Resolution")
-        ChipRow(
-            items = sizes,
-            isSelected = { it.width == settings.widthPx && it.height == settings.heightPx },
-            label = { "${it.width}x${it.height}" },
-            onSelect = { size -> viewModel.update { it.copy(widthPx = size.width, heightPx = size.height) } },
+        Text(
+            "${size.width}x${size.height} — the camera's own, so the viewfinder and the clip are the " +
+                "shape the sensor produces. Not a choice: picking a shape the sensor does not stream " +
+                "is what left the preview stretched.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Spacer(Modifier.height(8.dp))

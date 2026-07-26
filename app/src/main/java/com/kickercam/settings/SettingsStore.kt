@@ -21,8 +21,6 @@ class SettingsStore(private val context: Context) {
     private object Keys {
         val cameraId = stringPreferencesKey("camera_id")
         val zoomRatio = floatPreferencesKey("zoom_ratio")
-        val widthPx = intPreferencesKey("width_px")
-        val heightPx = intPreferencesKey("height_px")
         val fps = intPreferencesKey("fps")
         val bitrateMbps = intPreferencesKey("bitrate_mbps")
         val codec = stringPreferencesKey("codec")
@@ -57,8 +55,6 @@ class SettingsStore(private val context: Context) {
         AppSettings(
             cameraId = p[Keys.cameraId],
             zoomRatio = p[Keys.zoomRatio] ?: d.zoomRatio,
-            widthPx = p[Keys.widthPx] ?: d.widthPx,
-            heightPx = p[Keys.heightPx] ?: d.heightPx,
             fps = p[Keys.fps] ?: d.fps,
             bitrateMbps = p[Keys.bitrateMbps] ?: d.bitrateMbps,
             codec = p[Keys.codec]?.let { runCatching { VideoCodecOption.valueOf(it) }.getOrNull() } ?: d.codec,
@@ -95,8 +91,6 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { p ->
             s.cameraId?.let { p[Keys.cameraId] = it } ?: p.remove(Keys.cameraId)
             p[Keys.zoomRatio] = s.zoomRatio
-            p[Keys.widthPx] = s.widthPx
-            p[Keys.heightPx] = s.heightPx
             p[Keys.fps] = s.fps
             p[Keys.bitrateMbps] = s.bitrateMbps
             p[Keys.codec] = s.codec.name

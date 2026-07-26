@@ -205,8 +205,7 @@ class Camera2Session(
                 runCatching { configured.close() }
                 session = null
                 listener.onSessionFailed(
-                    "This camera cannot run ${surfaces.size} streams at " +
-                        "${req.settings.widthPx}x${req.settings.heightPx}",
+                    "This camera cannot run ${surfaces.size} streams at once",
                     true,
                 )
             }
