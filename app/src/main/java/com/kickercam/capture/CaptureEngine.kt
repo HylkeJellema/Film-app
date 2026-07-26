@@ -84,7 +84,9 @@ class CaptureEngine(
 
     private var previewTarget: PreviewTarget? = null
     private var settings: AppSettings = AppSettings()
-    private var displayRotationDegrees: Int = 90
+    // Natural orientation until the UI reports the window's: the activity is no longer locked, so
+    // portrait is a legitimate starting point rather than something to be corrected for.
+    private var displayRotationDegrees: Int = 0
     private var activeDescriptor: CameraDescriptor? = null
     private var lensLabel: String = ""
 

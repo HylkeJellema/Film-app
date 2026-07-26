@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -80,11 +81,11 @@ fun CameraScreen(
     // handles usually are, and they swallow the drag before it ever reaches one.
     var editingRoi by remember { mutableStateOf(false) }
 
-    // Sensor-driven, not display-driven: the activity is locked to landscape, so the display keeps
-    // reporting its natural orientation and would push a bogus quarter turn into the pipeline.
-    val deviceRotation = rememberDeviceRotationDegrees()
-    LaunchedEffect(deviceRotation) {
-        viewModel.engine.setDisplayRotation(deviceRotation)
+    // The window's rotation, not the phone's attitude: the image has to line up with the UI drawn
+    // around it, and the activity now rotates with the device so the two agree.
+    val windowRotation = rememberWindowRotationDegrees()
+    LaunchedEffect(windowRotation) {
+        viewModel.engine.setDisplayRotation(windowRotation)
     }
 
     // Keep the viewfinder alive: the phone is on a tripod and nobody is going to tap it.
@@ -243,93 +244,126 @@ private fun TopHud(
     onEditRoi: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxWidth()
             .background(Color.Black.copy(alpha = 0.45f))
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        StateChip(status = status)
+        // Portrait leaves nowhere near enough width for the readouts and five buttons on one line,
+        // so the buttons take the first row and the readouts drop underneath them.
+        val stacked = maxWidth < 640.dp
 
-        Spacer(Modifier.width(12.dp))
-
-        Column {
-            Text(
-                text = buildString {
-                    append("${status.effectiveSize.width}x${status.effectiveSize.height}")
-                    append(" · ${status.effectiveFps}fps")
-                    append(" · ${settings.codec.label.substringBefore(' ')}")
-                    append(" · ${settings.bitrateMbps}Mbps")
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White,
-            )
-            Text(
-                text = buildString {
-                    // Rotation inputs, on screen on purpose: when the viewfinder comes up sideways
-                    // these three numbers are the whole diagnosis.
-                    append("rot sensor ${status.sensorOrientation}")
-                    append(" · phone ${status.deviceRotation}")
-                    append(" · applied ${status.previewRotation}")
-                    if (status.rotationIsManual) append(" (manual)")
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = KickerOrange,
-            )
-            Text(
-                text = buildString {
-                    append("buffer ${"%.1f".format(status.bufferedSec)}s / ${settings.preRollSec.toInt()}s")
-                    status.readout.zoomRatio?.let { append(" · zoom ${"%.1f".format(it)}x") }
-                    status.readout.isoActual?.let { append(" · ISO $it") }
-                    status.readout.exposureTimeNs?.let {
-                        val fraction = if (it > 0) (1_000_000_000.0 / it).toInt() else 0
-                        append(" · 1/$fraction")
-                    }
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.65f),
-            )
+        val readouts: @Composable () -> Unit = {
+            Readouts(settings = settings, status = status, modifier = Modifier)
         }
-
-        Spacer(Modifier.width(12.dp))
-
-        Column(modifier = Modifier.width(120.dp)) {
-            Text(
-                text = detectionLabel ?: settings.detectorMode.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = Color.White.copy(alpha = 0.7f),
-            )
-            EnergyMeter(label = "box", value = roiEnergy, color = KickerGreen)
-            EnergyMeter(label = "bg", value = backgroundEnergy, color = Color.White.copy(alpha = 0.35f))
+        val meters: @Composable () -> Unit = {
+            Column(modifier = Modifier.width(120.dp)) {
+                Text(
+                    text = detectionLabel ?: settings.detectorMode.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.7f),
+                )
+                EnergyMeter(label = "box", value = roiEnergy, color = KickerGreen)
+                EnergyMeter(label = "bg", value = backgroundEnergy, color = Color.White.copy(alpha = 0.35f))
+            }
+        }
+        val buttons: @Composable () -> Unit = {
+            if (!status.detectionAvailable) {
+                AssistChip(
+                    onClick = {},
+                    label = { Text("detection off", style = MaterialTheme.typography.labelSmall) },
+                    colors = AssistChipDefaults.assistChipColors(labelColor = KickerRed),
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+            IconButton(onClick = onEditRoi) {
+                Icon(Icons.Filled.CropFree, contentDescription = "Adjust detection box", tint = Color.White)
+            }
+            IconButton(onClick = onFocus) {
+                Icon(Icons.Filled.CenterFocusStrong, contentDescription = "Focus now", tint = Color.White)
+            }
+            IconButton(onClick = onDim) {
+                Icon(Icons.Filled.BrightnessLow, contentDescription = "Dim screen", tint = Color.White)
+            }
+            IconButton(onClick = onOpenGallery) {
+                Icon(Icons.Filled.PhotoLibrary, contentDescription = "Clips", tint = Color.White)
+            }
+            IconButton(onClick = onOpenSettings) {
+                Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Color.White)
+            }
         }
 
-        Spacer(Modifier.weight(1f))
+        if (stacked) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StateChip(status = status)
+                    Spacer(Modifier.weight(1f))
+                    buttons()
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { readouts() }
+                    Spacer(Modifier.width(12.dp))
+                    meters()
+                }
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StateChip(status = status)
+                Spacer(Modifier.width(12.dp))
+                readouts()
+                Spacer(Modifier.width(12.dp))
+                meters()
+                Spacer(Modifier.weight(1f))
+                buttons()
+            }
+        }
+    }
+}
 
-        if (!status.detectionAvailable) {
-            AssistChip(
-                onClick = {},
-                label = { Text("detection off", style = MaterialTheme.typography.labelSmall) },
-                colors = AssistChipDefaults.assistChipColors(labelColor = KickerRed),
-            )
-            Spacer(Modifier.width(8.dp))
-        }
-
-        IconButton(onClick = onEditRoi) {
-            Icon(Icons.Filled.CropFree, contentDescription = "Adjust detection box", tint = Color.White)
-        }
-        IconButton(onClick = onFocus) {
-            Icon(Icons.Filled.CenterFocusStrong, contentDescription = "Focus now", tint = Color.White)
-        }
-        IconButton(onClick = onDim) {
-            Icon(Icons.Filled.BrightnessLow, contentDescription = "Dim screen", tint = Color.White)
-        }
-        IconButton(onClick = onOpenGallery) {
-            Icon(Icons.Filled.PhotoLibrary, contentDescription = "Clips", tint = Color.White)
-        }
-        IconButton(onClick = onOpenSettings) {
-            Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Color.White)
-        }
+/** Resolution, the rotation inputs and the live sensor readout. */
+@Composable
+private fun Readouts(
+    settings: AppSettings,
+    status: com.kickercam.capture.CaptureStatus,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier) {
+        Text(
+            text = buildString {
+                append("${status.effectiveSize.width}x${status.effectiveSize.height}")
+                append(" · ${status.effectiveFps}fps")
+                append(" · ${settings.codec.label.substringBefore(' ')}")
+                append(" · ${settings.bitrateMbps}Mbps")
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
+        )
+        Text(
+            text = buildString {
+                // Rotation inputs, on screen on purpose: when the viewfinder comes up sideways these
+                // three numbers are the whole diagnosis.
+                append("rot sensor ${status.sensorOrientation}")
+                append(" · window ${status.deviceRotation}")
+                append(" · applied ${status.previewRotation}")
+                if (status.rotationIsManual) append(" (manual)")
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = KickerOrange,
+        )
+        Text(
+            text = buildString {
+                append("buffer ${"%.1f".format(status.bufferedSec)}s / ${settings.preRollSec.toInt()}s")
+                status.readout.zoomRatio?.let { append(" · zoom ${"%.1f".format(it)}x") }
+                status.readout.isoActual?.let { append(" · ISO $it") }
+                status.readout.exposureTimeNs?.let {
+                    val fraction = if (it > 0) (1_000_000_000.0 / it).toInt() else 0
+                    append(" · 1/$fraction")
+                }
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.65f),
+        )
     }
 }
 

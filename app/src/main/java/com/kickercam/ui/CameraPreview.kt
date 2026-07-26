@@ -84,7 +84,7 @@ fun CameraPreview(
                                 texture: SurfaceTexture,
                                 width: Int,
                                 height: Int,
-                            ) = Unit
+                            ) = holder.reassertBufferSize()
 
                             override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
                                 holder.release()
@@ -105,15 +105,36 @@ private class PreviewSurfaceHolder(var callback: (PreviewTarget?) -> Unit) {
     private var texture: SurfaceTexture? = null
     private var surface: Surface? = null
 
+    /** What the capture engine asked for, kept so it can be re-applied. */
+    private var requestedSize: Size? = null
+
     fun onAvailable(texture: SurfaceTexture) {
         this.texture = texture
         val created = Surface(texture)
         surface = created
         callback(
             PreviewTarget(created) { size ->
-                runCatching { texture.setDefaultBufferSize(size.width, size.height) }
+                requestedSize = size
+                applyBufferSize()
             },
         )
+    }
+
+    /**
+     * Re-asserts the engine's buffer size, which TextureView overwrites on its own.
+     *
+     * TextureView calls `setDefaultBufferSize(getWidth(), getHeight())` whenever it is laid out. The
+     * camera then streams at whatever the *view* happened to measure — not a size it advertised, so
+     * the HAL substitutes the nearest one it has, typically the sensor's native 4:3. That is what a
+     * 16:9 slot showing a 4:3 stream looks like: a 16:9 TV squashed towards square. The engine sets
+     * the size once before configuring the session, so every later layout has to be undone.
+     */
+    fun reassertBufferSize() = applyBufferSize()
+
+    private fun applyBufferSize() {
+        val size = requestedSize ?: return
+        val target = texture ?: return
+        runCatching { target.setDefaultBufferSize(size.width, size.height) }
     }
 
     fun release() {

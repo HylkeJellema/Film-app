@@ -1,51 +1,33 @@
 package com.kickercam.ui
 
-import android.view.OrientationEventListener
 import android.view.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 
 /**
- * The device's physical orientation, in degrees, snapped to the nearest quarter turn.
+ * How far the window is rotated from the device's natural orientation, in degrees.
  *
- * This deliberately does not use `Display.getRotation()`. The viewfinder activity is locked to
- * landscape, so the display never actually rotates — it keeps reporting the natural orientation while
- * the window is drawn landscape. Feeding that into the sensor-orientation formula yields a spurious
- * quarter turn, which is exactly what left the preview lying on its side. The accelerometer is the
- * only honest source of "which way up is the phone" for a fixed-orientation activity.
+ * This is the *window's* rotation, not the phone's attitude in space, and the distinction is the
+ * whole point. Whether the viewfinder looks right is a question about screen space: the image has to
+ * line up with the UI drawn around it. Gravity is a different question, and answering it instead is
+ * what put the preview on its side — with the window locked to landscape and the image turned upright
+ * against gravity, holding the phone portrait produced a sideways image in a narrow strip, which is
+ * exactly what it was asked for and not at all what anyone wanted.
+ *
+ * The activity now rotates with the device, so the window follows how the phone is held and the two
+ * questions have the same answer again. In portrait the window reports its natural orientation and no
+ * rotation is applied at all.
  */
 @Composable
-fun rememberDeviceRotationDegrees(): Int {
+fun rememberWindowRotationDegrees(): Int {
     val context = LocalContext.current
 
-    // A landscape-locked window is always at a quarter turn; start there rather than at 0 so the
-    // very first frames are already oriented correctly.
-    var rotationDegrees by remember { mutableIntStateOf(90) }
+    // The activity handles configuration changes itself, so this is what recomposes on a rotation.
+    LocalConfiguration.current
 
-    DisposableEffect(context) {
-        val listener = object : OrientationEventListener(context) {
-            override fun onOrientationChanged(orientation: Int) {
-                if (orientation == ORIENTATION_UNKNOWN) return
-                val surfaceRotation = when {
-                    orientation >= 45 && orientation < 135 -> Surface.ROTATION_270
-                    orientation >= 135 && orientation < 225 -> Surface.ROTATION_180
-                    orientation >= 225 && orientation < 315 -> Surface.ROTATION_90
-                    else -> Surface.ROTATION_0
-                }
-                val degrees = surfaceRotationToDegrees(surfaceRotation)
-                if (degrees != rotationDegrees) rotationDegrees = degrees
-            }
-        }
-        if (listener.canDetectOrientation()) listener.enable()
-        onDispose { listener.disable() }
-    }
-
-    return rotationDegrees
+    return surfaceRotationToDegrees(ContextCompat.getDisplayOrDefault(context).rotation)
 }
 
 fun surfaceRotationToDegrees(surfaceRotation: Int): Int = when (surfaceRotation) {
