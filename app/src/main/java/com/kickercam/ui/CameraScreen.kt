@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AssistChip
@@ -117,41 +118,37 @@ fun CameraScreen(
         }
     }
 
-    val aspect = remember(status.effectiveSize, status.previewRotation) {
-        previewAspectRatio(status.effectiveSize, status.previewRotation)
-    }
+    // Where the picture actually sits inside the viewfinder, reported by the preview itself so the
+    // overlay and the preview cannot disagree about it.
+    var fit by remember { mutableStateOf<PreviewFit?>(null) }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
 
-        // No fillMaxSize here: it fixes the constraints, which makes aspectRatio a no-op and lets the
-        // preview stretch to the whole screen. aspectRatio alone fits-and-letterboxes correctly.
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .aspectRatio(aspect),
-        ) {
-            CameraPreview(
-                bufferSize = status.effectiveSize,
-                rotationDegrees = status.previewRotation,
-                onTargetChanged = { target ->
-                    if (target != null) viewModel.engine.attachPreview(target)
-                    else viewModel.engine.detachPreview()
-                },
-                modifier = Modifier.fillMaxSize(),
-            )
+        // Full bleed, both of them. The preview places the image inside itself and leaves the rest
+        // black; nothing here needs to know the aspect ratio.
+        CameraPreview(
+            bufferSize = status.effectiveSize,
+            rotationDegrees = status.previewRotation,
+            onTargetChanged = { target ->
+                if (target != null) viewModel.engine.attachPreview(target)
+                else viewModel.engine.detachPreview()
+            },
+            onFitChanged = { fit = it },
+            modifier = Modifier.fillMaxSize(),
+        )
 
-            RoiOverlay(
-                roi = settings.roi,
-                detectionBoxes = detection.boxes,
-                triggered = detection.hit,
-                editable = !dimmed,
-                emphasised = editingRoi,
-                showDetections = settings.showDetectionOverlay,
-                onRoiChange = viewModel::dragRoi,
-                onRoiCommit = viewModel::commitRoi,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
+        RoiOverlay(
+            roi = settings.roi,
+            fit = fit,
+            detectionBoxes = detection.boxes,
+            triggered = detection.hit,
+            editable = !dimmed,
+            emphasised = editingRoi,
+            showDetections = settings.showDetectionOverlay,
+            onRoiChange = viewModel::dragRoi,
+            onRoiCommit = viewModel::commitRoi,
+            modifier = Modifier.fillMaxSize(),
+        )
 
         if (!dimmed && editingRoi) {
             RoiEditBar(
@@ -172,6 +169,13 @@ fun CameraScreen(
                 onFocus = { viewModel.engine.focusNow() },
                 onDim = { dimmed = true },
                 onEditRoi = { editingRoi = true },
+                onRotate = {
+                    viewModel.update { current ->
+                        current.copy(
+                            rotationOffsetDegrees = (current.rotationOffsetDegrees + 90) % 360,
+                        )
+                    }
+                },
                 modifier = Modifier.align(Alignment.TopCenter),
             )
 
@@ -242,6 +246,7 @@ private fun TopHud(
     onFocus: () -> Unit,
     onDim: () -> Unit,
     onEditRoi: () -> Unit,
+    onRotate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(
@@ -276,6 +281,13 @@ private fun TopHud(
                     colors = AssistChipDefaults.assistChipColors(labelColor = KickerRed),
                 )
                 Spacer(Modifier.width(8.dp))
+            }
+            IconButton(onClick = onRotate) {
+                Icon(
+                    Icons.Filled.ScreenRotation,
+                    contentDescription = "Rotate the viewfinder a quarter turn",
+                    tint = if (status.rotationOffset == 0) Color.White else KickerOrange,
+                )
             }
             IconButton(onClick = onEditRoi) {
                 Icon(Icons.Filled.CropFree, contentDescription = "Adjust detection box", tint = Color.White)

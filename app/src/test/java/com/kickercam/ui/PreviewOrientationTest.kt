@@ -73,7 +73,7 @@ class PreviewOrientationTest {
         assertEquals(270, surfaceRotationToDegrees(Surface.ROTATION_270))
     }
 
-    // ------------------------------------------------------------------ preview shape
+    // ------------------------------------------------------------------ preview placement
 
     @Test
     fun `quarter turns are recognised including unnormalised input`() {
@@ -87,29 +87,85 @@ class PreviewOrientationTest {
     }
 
     @Test
-    fun `an unrotated 1080p preview keeps its 16 by 9 shape`() {
-        assertEquals(16f / 9f, previewAspectRatio(1920, 1080, 0), 1e-4f)
-        assertEquals(16f / 9f, previewAspectRatio(1920, 1080, 180), 1e-4f)
+    fun `an unrotated 1080p buffer fills a 16 by 9 viewfinder exactly`() {
+        val fit = previewFit(2560f, 1440f, 1920, 1080, 0)!!
+        assertEquals(0f, fit.left, 1e-3f)
+        assertEquals(0f, fit.top, 1e-3f)
+        assertEquals(2560f, fit.width, 1e-3f)
+        assertEquals(1440f, fit.height, 1e-3f)
     }
 
     @Test
-    fun `a quarter turn transposes the preview shape`() {
-        // A 16:9 buffer rotated 90° occupies a 9:16 slot. Reporting 16:9 here is what let the image
-        // be stretched across a landscape window.
-        assertEquals(9f / 16f, previewAspectRatio(1920, 1080, 90), 1e-4f)
-        assertEquals(9f / 16f, previewAspectRatio(1920, 1080, 270), 1e-4f)
+    fun `a wider screen gets bars at the sides, never a stretched image`() {
+        // The 19.5:9 phone this was written for. The image keeps its shape and the rest stays black.
+        val fit = previewFit(3120f, 1440f, 1920, 1080, 0)!!
+        assertEquals(1440f, fit.height, 1e-3f)
+        assertEquals(2560f, fit.width, 1e-3f)
+        assertEquals(280f, fit.left, 1e-3f)
+        assertEquals(0f, fit.top, 1e-3f)
+        assertEquals(16f / 9f, fit.width / fit.height, 1e-3f)
     }
 
     @Test
-    fun `four by three buffers are handled too`() {
-        assertEquals(4f / 3f, previewAspectRatio(1440, 1080, 0), 1e-4f)
-        assertEquals(3f / 4f, previewAspectRatio(1440, 1080, 90), 1e-4f)
+    fun `a quarter turn in portrait gets bars above and below`() {
+        // 1440x3120 portrait window, landscape buffer turned upright: 1440x2560 centred vertically.
+        // The old layout clamped this to a 1440x1440 square, which is what "stretched into a square
+        // box" was.
+        val fit = previewFit(1440f, 3120f, 1920, 1080, 90)!!
+        assertEquals(1440f, fit.width, 1e-3f)
+        assertEquals(2560f, fit.height, 1e-3f)
+        assertEquals(0f, fit.left, 1e-3f)
+        assertEquals(280f, fit.top, 1e-3f)
     }
 
     @Test
-    fun `a degenerate size falls back to 16 by 9 instead of dividing by zero`() {
-        assertEquals(16f / 9f, bufferAspectRatio(0, 0), 1e-4f)
-        assertEquals(16f / 9f, bufferAspectRatio(1920, 0), 1e-4f)
+    fun `a quarter turn in landscape gets bars at the sides`() {
+        val fit = previewFit(3120f, 1440f, 1920, 1080, 270)!!
+        assertEquals(810f, fit.width, 1e-3f)
+        assertEquals(1440f, fit.height, 1e-3f)
+        assertEquals(1155f, fit.left, 1e-3f)
+        assertEquals(0f, fit.top, 1e-3f)
+    }
+
+    @Test
+    fun `the image is never distorted, whatever the buffer, screen and rotation`() {
+        val buffers = listOf(1920 to 1080, 1440 to 1080, 3840 to 2160)
+        val views = listOf(3120f to 1440f, 1440f to 3120f, 2000f to 2000f, 1080f to 2400f)
+        for ((bufferWidth, bufferHeight) in buffers) {
+            for ((viewWidth, viewHeight) in views) {
+                for (rotation in listOf(0, 90, 180, 270)) {
+                    val fit = previewFit(viewWidth, viewHeight, bufferWidth, bufferHeight, rotation)!!
+                    val expected = if (isQuarterTurn(rotation)) {
+                        bufferHeight.toFloat() / bufferWidth.toFloat()
+                    } else {
+                        bufferWidth.toFloat() / bufferHeight.toFloat()
+                    }
+                    val label = "$bufferWidth x $bufferHeight in $viewWidth x $viewHeight @ $rotation"
+                    assertEquals(label, expected, fit.width / fit.height, 1e-3f)
+                    // Inside the viewfinder, and centred.
+                    assertTrue(label, fit.width <= viewWidth + 1e-3f)
+                    assertTrue(label, fit.height <= viewHeight + 1e-3f)
+                    assertEquals(label, viewWidth - fit.right, fit.left, 1e-3f)
+                    assertEquals(label, viewHeight - fit.bottom, fit.top, 1e-3f)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `at least one axis always touches the edge, so nothing is wasted`() {
+        for (rotation in listOf(0, 90, 180, 270)) {
+            val fit = previewFit(3120f, 1440f, 1920, 1080, rotation)!!
+            val touches = fit.width in 3119f..3121f || fit.height in 1439f..1441f
+            assertTrue("rotation $rotation -> $fit", touches)
+        }
+    }
+
+    @Test
+    fun `a degenerate size has no answer rather than a wrong one`() {
+        assertEquals(null, previewFit(0f, 1440f, 1920, 1080, 0))
+        assertEquals(null, previewFit(3120f, 1440f, 0, 0, 0))
+        assertEquals(null, previewFit(3120f, 0f, 1920, 1080, 90))
     }
 
     // ------------------------------------------------------------------ rotation correction

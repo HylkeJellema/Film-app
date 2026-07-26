@@ -15,33 +15,28 @@ import androidx.compose.ui.geometry.Size as GeometrySize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.kickercam.settings.RoiRect
 import com.kickercam.ui.theme.KickerGreen
 import com.kickercam.ui.theme.KickerOrange
-import kotlin.math.abs
-
-internal enum class DragMode {
-    NONE, MOVE,
-    TOP_LEFT, TOP_RIGHT, BOTTOM_LEFT, BOTTOM_RIGHT,
-    LEFT, RIGHT, TOP, BOTTOM,
-}
 
 /**
  * The detection box: drag the middle to move it onto the kicker, drag a corner or an edge to resize.
+ *
+ * Everything is drawn against [fit], the rectangle the camera image actually occupies, rather than
+ * against the whole viewfinder — the box marks a region of the *picture*, so on a letterboxed preview
+ * it has to stay on the picture and off the black bars.
  *
  * Coordinates are normalised so the box keeps its framing across resolution and lens changes.
  */
 @Composable
 fun RoiOverlay(
     roi: RoiRect,
+    fit: PreviewFit?,
     detectionBoxes: List<RoiRect>,
     triggered: Boolean,
     editable: Boolean,
-    /** Draws the box heavier while it is being adjusted, so the mode is obvious. */
     emphasised: Boolean,
     showDetections: Boolean,
     onRoiChange: (RoiRect) -> Unit,
@@ -57,47 +52,43 @@ fun RoiOverlay(
         with(density) { if (emphasised) 3.dp.toPx() else 2.dp.toPx() }
     }
 
-    // The gesture lambdas below live for the lifetime of the pointerInput node, which must not be
-    // re-keyed on every drag frame. They therefore have to read the *current* box and callbacks
-    // indirectly — capturing them directly would freeze the values from first composition and make
-    // every delta apply to the original rectangle, so the box would snap back on every move.
-    val currentRoi by rememberUpdatedState(roi)
-    val currentOnChange by rememberUpdatedState(onRoiChange)
-    val currentOnCommit by rememberUpdatedState(onRoiCommit)
-
-    var layoutSize by remember { mutableStateOf(IntSize.Zero) }
     var dragMode by remember { mutableStateOf(DragMode.NONE) }
+
+    // The gesture detector is installed once and outlives every recomposition, so it must not close
+    // over the box or the image rectangle it happened to see first — that froze the box at its
+    // starting shape and made every drag snap back.
+    val currentRoi by rememberUpdatedState(roi)
+    val currentFit by rememberUpdatedState(fit)
+    val changeRoi by rememberUpdatedState(onRoiChange)
+    val commitRoi by rememberUpdatedState(onRoiCommit)
 
     val gestures = if (editable) {
         Modifier.pointerInput(Unit) {
             detectDragGestures(
                 onDragStart = { start ->
-                    val size = layoutSize
-                    if (size.width <= 0 || size.height <= 0) return@detectDragGestures
+                    val area = currentFit ?: return@detectDragGestures
+                    if (area.width <= 0f || area.height <= 0f) return@detectDragGestures
                     dragMode = hitTest(
-                        point = start,
+                        // Into the image's own coordinates: the box lives on the picture, not on the
+                        // black bars around it.
+                        point = Offset(start.x - area.left, start.y - area.top),
                         roi = currentRoi,
-                        width = size.width.toFloat(),
-                        height = size.height.toFloat(),
+                        width = area.width,
+                        height = area.height,
                         tolerancePx = handleTouchPx,
                     )
                 },
                 onDragEnd = {
-                    if (dragMode != DragMode.NONE) currentOnCommit()
+                    if (dragMode != DragMode.NONE) commitRoi()
                     dragMode = DragMode.NONE
                 },
                 onDragCancel = { dragMode = DragMode.NONE },
                 onDrag = { _, delta ->
-                    val size = layoutSize
-                    if (size.width <= 0 || size.height <= 0) return@detectDragGestures
+                    val area = currentFit ?: return@detectDragGestures
+                    if (area.width <= 0f || area.height <= 0f) return@detectDragGestures
                     if (dragMode == DragMode.NONE) return@detectDragGestures
-                    currentOnChange(
-                        applyDrag(
-                            roi = currentRoi,
-                            mode = dragMode,
-                            dx = delta.x / size.width,
-                            dy = delta.y / size.height,
-                        ),
+                    changeRoi(
+                        applyDrag(currentRoi, dragMode, delta.x / area.width, delta.y / area.height),
                     )
                 },
             )
@@ -106,23 +97,21 @@ fun RoiOverlay(
         Modifier
     }
 
-    Canvas(
-        modifier = modifier
-            .fillMaxSize()
-            .onSizeChanged { layoutSize = it }
-            .then(gestures),
-    ) {
-        val left = roi.left * size.width
-        val top = roi.top * size.height
-        val width = roi.width * size.width
-        val height = roi.height * size.height
+    Canvas(modifier = modifier.fillMaxSize().then(gestures)) {
+        val area = fit ?: return@Canvas
 
-        // Darken everything outside the box so the framing is unmistakable.
+        val left = area.left + roi.left * area.width
+        val top = area.top + roi.top * area.height
+        val width = roi.width * area.width
+        val height = roi.height * area.height
+
+        // Darken the rest of the picture so the framing is unmistakable. Only the picture: the bars
+        // outside it are already black.
         val shade = Color.Black.copy(alpha = 0.32f)
-        drawRect(shade, Offset(0f, 0f), GeometrySize(size.width, top))
-        drawRect(shade, Offset(0f, top + height), GeometrySize(size.width, size.height - top - height))
-        drawRect(shade, Offset(0f, top), GeometrySize(left, height))
-        drawRect(shade, Offset(left + width, top), GeometrySize(size.width - left - width, height))
+        drawRect(shade, Offset(area.left, area.top), GeometrySize(area.width, top - area.top))
+        drawRect(shade, Offset(area.left, top + height), GeometrySize(area.width, area.bottom - top - height))
+        drawRect(shade, Offset(area.left, top), GeometrySize(left - area.left, height))
+        drawRect(shade, Offset(left + width, top), GeometrySize(area.right - left - width, height))
 
         val boxColor = if (triggered) KickerGreen else KickerOrange
         drawRect(
@@ -141,10 +130,10 @@ fun RoiOverlay(
             )
             for (corner in corners) {
                 drawCircle(color = boxColor, radius = handleDrawPx, center = corner)
-                drawCircle(Color.Black.copy(alpha = 0.55f), handleDrawPx * 0.45f, corner)
+                drawCircle(color = Color.Black.copy(alpha = 0.55f), radius = handleDrawPx * 0.45f, center = corner)
             }
 
-            // Edge grips, so a box pushed against a screen edge is still resizable.
+            // Edge grips, so one side can be nudged without hunting for a corner.
             val edges = listOf(
                 Offset(left + width / 2f, top),
                 Offset(left + width / 2f, top + height),
@@ -152,7 +141,7 @@ fun RoiOverlay(
                 Offset(left + width, top + height / 2f),
             )
             for (edge in edges) {
-                drawCircle(color = boxColor.copy(alpha = 0.75f), radius = handleDrawPx * 0.6f, center = edge)
+                drawCircle(color = boxColor, radius = handleDrawPx * 0.6f, center = edge)
             }
         }
 
@@ -160,94 +149,11 @@ fun RoiOverlay(
             for (box in detectionBoxes) {
                 drawRect(
                     color = KickerGreen.copy(alpha = 0.9f),
-                    topLeft = Offset(box.left * size.width, box.top * size.height),
-                    size = GeometrySize(box.width * size.width, box.height * size.height),
+                    topLeft = Offset(area.left + box.left * area.width, area.top + box.top * area.height),
+                    size = GeometrySize(box.width * area.width, box.height * area.height),
                     style = Stroke(width = strokePx * 0.6f),
                 )
             }
         }
     }
-}
-
-internal fun hitTest(
-    point: Offset,
-    roi: RoiRect,
-    width: Float,
-    height: Float,
-    tolerancePx: Float,
-): DragMode {
-    val left = roi.left * width
-    val top = roi.top * height
-    val right = roi.right * width
-    val bottom = roi.bottom * height
-
-    val nearLeft = abs(point.x - left) <= tolerancePx
-    val nearRight = abs(point.x - right) <= tolerancePx
-    val nearTop = abs(point.y - top) <= tolerancePx
-    val nearBottom = abs(point.y - bottom) <= tolerancePx
-    val withinX = point.x in (left - tolerancePx)..(right + tolerancePx)
-    val withinY = point.y in (top - tolerancePx)..(bottom + tolerancePx)
-
-    // Corners win over edges, edges over a plain move.
-    return when {
-        nearLeft && nearTop -> DragMode.TOP_LEFT
-        nearRight && nearTop -> DragMode.TOP_RIGHT
-        nearLeft && nearBottom -> DragMode.BOTTOM_LEFT
-        nearRight && nearBottom -> DragMode.BOTTOM_RIGHT
-        nearLeft && withinY -> DragMode.LEFT
-        nearRight && withinY -> DragMode.RIGHT
-        nearTop && withinX -> DragMode.TOP
-        nearBottom && withinX -> DragMode.BOTTOM
-        point.x in left..right && point.y in top..bottom -> DragMode.MOVE
-        else -> DragMode.NONE
-    }
-}
-
-internal const val MIN_ROI_SIZE = 0.06f
-
-internal fun applyDrag(roi: RoiRect, mode: DragMode, dx: Float, dy: Float): RoiRect {
-    // Each edge is resolved independently against the opposite edge, so a corner drag can never
-    // invert the rectangle no matter how fast the finger moves.
-    var left = roi.left
-    var top = roi.top
-    var right = roi.right
-    var bottom = roi.bottom
-
-    when (mode) {
-        DragMode.NONE -> return roi
-
-        DragMode.MOVE -> return RoiRect(
-            left = (roi.left + dx).coerceIn(0f, 1f - roi.width),
-            top = (roi.top + dy).coerceIn(0f, 1f - roi.height),
-            width = roi.width,
-            height = roi.height,
-        )
-
-        DragMode.TOP_LEFT -> {
-            left = (left + dx).coerceIn(0f, right - MIN_ROI_SIZE)
-            top = (top + dy).coerceIn(0f, bottom - MIN_ROI_SIZE)
-        }
-
-        DragMode.TOP_RIGHT -> {
-            right = (right + dx).coerceIn(left + MIN_ROI_SIZE, 1f)
-            top = (top + dy).coerceIn(0f, bottom - MIN_ROI_SIZE)
-        }
-
-        DragMode.BOTTOM_LEFT -> {
-            left = (left + dx).coerceIn(0f, right - MIN_ROI_SIZE)
-            bottom = (bottom + dy).coerceIn(top + MIN_ROI_SIZE, 1f)
-        }
-
-        DragMode.BOTTOM_RIGHT -> {
-            right = (right + dx).coerceIn(left + MIN_ROI_SIZE, 1f)
-            bottom = (bottom + dy).coerceIn(top + MIN_ROI_SIZE, 1f)
-        }
-
-        DragMode.LEFT -> left = (left + dx).coerceIn(0f, right - MIN_ROI_SIZE)
-        DragMode.RIGHT -> right = (right + dx).coerceIn(left + MIN_ROI_SIZE, 1f)
-        DragMode.TOP -> top = (top + dy).coerceIn(0f, bottom - MIN_ROI_SIZE)
-        DragMode.BOTTOM -> bottom = (bottom + dy).coerceIn(top + MIN_ROI_SIZE, 1f)
-    }
-
-    return RoiRect(left, top, right - left, bottom - top).clampToUnit(MIN_ROI_SIZE)
 }

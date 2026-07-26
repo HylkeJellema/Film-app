@@ -1,143 +1,156 @@
 package com.kickercam.ui
 
+import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.util.Size
 import android.view.Surface
 import android.view.TextureView
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.viewinterop.AndroidView
 import com.kickercam.capture.PreviewTarget
 
 /**
- * TextureView-backed viewfinder.
+ * The viewfinder: one TextureView filling the whole area, with one matrix placing the camera image
+ * inside it.
  *
- * A TextureView rather than a SurfaceView because the camera always delivers frames in sensor
- * orientation and the view has to be rotated to compensate — TextureView composites through the
- * normal view hierarchy, so rotating it is well defined.
+ * Earlier versions tried to express this through layout — an aspect-ratio box, a view laid out at
+ * buffer proportions, a rotated container whose width and height were swapped. Every one of those
+ * pieces was another chance to get it wrong, and between constraint clamping and a stale buffer size
+ * they took most of those chances. So none of it is laid out any more: the view is simply the full
+ * area, and where the picture goes within it is [previewFit]'s single answer, applied as a transform.
  *
- * All four rotations are handled. A quarter turn also swaps the view's width and height, because a
- * 16:9 view rotated 90° occupies a 9:16 slot on screen; laying the view out at buffer proportions
- * and then rotating it into place is what keeps the image square with the world instead of stretched.
- *
- * The buffer size is deliberately not set here: the capture engine sets it through [PreviewTarget]
- * right before it configures the session, which is the only point where the final recording
- * resolution is known.
+ * The scale is one number for both axes, so the image cannot be stretched. What it does not cover
+ * stays black.
  */
 @Composable
 fun CameraPreview(
     bufferSize: Size,
     rotationDegrees: Int,
     onTargetChanged: (PreviewTarget?) -> Unit,
+    onFitChanged: (PreviewFit?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val holder = remember { PreviewSurfaceHolder(onTargetChanged) }
     holder.callback = onTargetChanged
+    holder.onFit = onFitChanged
+    holder.bufferSize = bufferSize
+    holder.rotationDegrees = rotationDegrees
 
     DisposableEffect(Unit) {
         onDispose { holder.release() }
     }
 
-    val quarterTurn = isQuarterTurn(rotationDegrees)
-    val bufferAspect = bufferAspectRatio(bufferSize)
+    AndroidView(
+        modifier = modifier.fillMaxSize(),
+        factory = { context ->
+            TextureView(context).apply {
+                isOpaque = false
+                surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+                    override fun onSurfaceTextureAvailable(
+                        texture: SurfaceTexture,
+                        width: Int,
+                        height: Int,
+                    ) = holder.onAvailable(this@apply, texture)
 
-    BoxWithConstraints(modifier = modifier, contentAlignment = Alignment.Center) {
-        // The view is laid out at the buffer's own proportions, then rotated into the slot.
-        val viewWidth = if (quarterTurn) maxHeight else maxWidth
-        val viewHeight = if (quarterTurn) maxWidth else maxHeight
+                    override fun onSurfaceTextureSizeChanged(
+                        texture: SurfaceTexture,
+                        width: Int,
+                        height: Int,
+                    ) = holder.onViewResized(this@apply)
 
-        // The overwhelmingly common case on a tripod is no rotation at all, so it gets no graphics
-        // layer — a rotated TextureView is the fiddly path and it should not be on the happy path.
-        val rotation = ((rotationDegrees % 360) + 360) % 360
-        val rotationModifier = if (rotation == 0) {
-            Modifier
-        } else {
-            Modifier.graphicsLayer { rotationZ = rotation.toFloat() }
-        }
-
-        // requiredSize, not size: a quarter turn asks for a box wider than the slot it will occupy
-        // once rotated, and size() is clamped by the incoming constraints. Asking for 2560x1440 inside
-        // a 1440x2560 slot got clamped to 1440x1440 — an actual square, with the image shrunk to fit
-        // inside it while the overlay still spanned the full slot. requiredSize ignores the clamp,
-        // which is exactly right here: after the rotation the box lands inside the slot anyway.
-        Box(
-            modifier = Modifier
-                .requiredSize(width = viewWidth, height = viewHeight)
-                .then(rotationModifier),
-        ) {
-            AndroidView(
-                modifier = Modifier.aspectRatio(bufferAspect).align(Alignment.Center),
-                factory = { context ->
-                    TextureView(context).apply {
-                        isOpaque = true
-                        surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-                            override fun onSurfaceTextureAvailable(
-                                texture: SurfaceTexture,
-                                width: Int,
-                                height: Int,
-                            ) = holder.onAvailable(texture)
-
-                            override fun onSurfaceTextureSizeChanged(
-                                texture: SurfaceTexture,
-                                width: Int,
-                                height: Int,
-                            ) = holder.reassertBufferSize()
-
-                            override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
-                                holder.release()
-                                return true
-                            }
-
-                            override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
-                        }
+                    override fun onSurfaceTextureDestroyed(texture: SurfaceTexture): Boolean {
+                        holder.release()
+                        return true
                     }
-                },
-            )
-        }
-    }
+
+                    override fun onSurfaceTextureUpdated(texture: SurfaceTexture) = Unit
+                }
+            }
+        },
+        // Runs on every recomposition, which is what re-places the image when the format or the
+        // rotation changes without waiting for a resize.
+        update = { view -> holder.apply(view) },
+    )
 }
 
 private class PreviewSurfaceHolder(var callback: (PreviewTarget?) -> Unit) {
 
+    var onFit: (PreviewFit?) -> Unit = {}
+    var bufferSize: Size = Size(0, 0)
+    var rotationDegrees: Int = 0
+
     private var texture: SurfaceTexture? = null
     private var surface: Surface? = null
 
-    /** What the capture engine asked for, kept so it can be re-applied. */
-    private var requestedSize: Size? = null
+    /** The size the capture engine asked the camera to stream at. */
+    private var streamSize: Size? = null
 
-    fun onAvailable(texture: SurfaceTexture) {
+    private var reported: PreviewFit? = null
+
+    fun onAvailable(view: TextureView, texture: SurfaceTexture) {
         this.texture = texture
         val created = Surface(texture)
         surface = created
         callback(
             PreviewTarget(created) { size ->
-                requestedSize = size
+                streamSize = size
                 applyBufferSize()
+                view.post { apply(view) }
             },
         )
     }
 
+    fun onViewResized(view: TextureView) {
+        // TextureView resets the buffer size to its own dimensions whenever it is laid out, which
+        // leaves the camera streaming at a size it never advertised — and the HAL then substitutes
+        // whatever it does have, typically the sensor's native 4:3. The engine's choice has to win.
+        applyBufferSize()
+        apply(view)
+    }
+
     /**
-     * Re-asserts the engine's buffer size, which TextureView overwrites on its own.
+     * Places the camera image inside the view.
      *
-     * TextureView calls `setDefaultBufferSize(getWidth(), getHeight())` whenever it is laid out. The
-     * camera then streams at whatever the *view* happened to measure — not a size it advertised, so
-     * the HAL substitutes the nearest one it has, typically the sensor's native 4:3. That is what a
-     * 16:9 slot showing a 4:3 stream looks like: a 16:9 TV squashed towards square. The engine sets
-     * the size once before configuring the session, so every later layout has to be undone.
+     * TextureView's default is to stretch the buffer across the whole view, so the transform starts by
+     * undoing that stretch, then rotates about the image's centre, scales both axes by the one factor
+     * [previewFit] chose, and centres the result.
      */
-    fun reassertBufferSize() = applyBufferSize()
+    fun apply(view: TextureView) {
+        val bufferWidth = bufferSize.width
+        val bufferHeight = bufferSize.height
+        val viewWidth = view.width.toFloat()
+        val viewHeight = view.height.toFloat()
+
+        val fit = previewFit(viewWidth, viewHeight, bufferWidth, bufferHeight, rotationDegrees)
+        if (fit == null) {
+            report(null)
+            return
+        }
+
+        val matrix = Matrix().apply {
+            setScale(bufferWidth / viewWidth, bufferHeight / viewHeight)
+            postTranslate(-bufferWidth / 2f, -bufferHeight / 2f)
+            postRotate(normaliseRotation(rotationDegrees).toFloat())
+            postScale(fit.scale, fit.scale)
+            postTranslate(viewWidth / 2f, viewHeight / 2f)
+        }
+        view.setTransform(matrix)
+        view.invalidate()
+        report(fit)
+    }
+
+    private fun report(fit: PreviewFit?) {
+        if (fit == reported) return
+        reported = fit
+        onFit(fit)
+    }
 
     private fun applyBufferSize() {
-        val size = requestedSize ?: return
+        val size = streamSize ?: return
         val target = texture ?: return
         runCatching { target.setDefaultBufferSize(size.width, size.height) }
     }
@@ -148,28 +161,6 @@ private class PreviewSurfaceHolder(var callback: (PreviewTarget?) -> Unit) {
         surface?.release()
         surface = null
         texture = null
+        report(null)
     }
 }
-
-fun isQuarterTurn(rotationDegrees: Int): Boolean {
-    val normalised = ((rotationDegrees % 360) + 360) % 360
-    return normalised == 90 || normalised == 270
-}
-
-/** Aspect ratio of the camera buffer itself, always in sensor (landscape) orientation. */
-fun bufferAspectRatio(widthPx: Int, heightPx: Int): Float =
-    if (heightPx > 0 && widthPx > 0) widthPx.toFloat() / heightPx.toFloat() else 16f / 9f
-
-fun bufferAspectRatio(size: Size): Float = bufferAspectRatio(size.width, size.height)
-
-/**
- * Aspect ratio the preview occupies on screen once [rotationDegrees] has been applied. A quarter
- * turn transposes it.
- */
-fun previewAspectRatio(widthPx: Int, heightPx: Int, rotationDegrees: Int): Float {
-    val bufferAspect = bufferAspectRatio(widthPx, heightPx)
-    return if (isQuarterTurn(rotationDegrees)) 1f / bufferAspect else bufferAspect
-}
-
-fun previewAspectRatio(size: Size, rotationDegrees: Int): Float =
-    previewAspectRatio(size.width, size.height, rotationDegrees)
