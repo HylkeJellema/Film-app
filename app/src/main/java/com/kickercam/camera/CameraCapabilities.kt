@@ -17,6 +17,53 @@ import kotlin.math.roundToInt
 
 private const val TAG = "CameraCapabilities"
 
+/** Widest size three simultaneous streams manage on essentially any device, so the default. */
+private const val DEFAULT_MAX_WIDTH = 1920
+
+/** How closely two aspect ratios must agree to count as the same shape. */
+private const val ASPECT_TOLERANCE = 0.02f
+
+/**
+ * A width and height, as plain numbers.
+ *
+ * The rules below work in these rather than [Size] purely so they can be tested: `android.util.Size`
+ * is a stub in unit tests and throws on `getWidth`, and this rule is the one place a shape mismatch
+ * could creep back in, so it is worth being able to test.
+ */
+internal typealias Dimensions = Pair<Int, Int>
+
+private val Dimensions.width: Int get() = first
+private val Dimensions.height: Int get() = second
+private val Dimensions.aspect: Float get() = width.toFloat() / height.toFloat()
+
+/**
+ * The sizes worth offering out of everything a camera advertises: those in the shape the sensor
+ * produces, largest first.
+ *
+ * The largest advertised size defines the shape and only sizes matching it survive. That is what keeps
+ * the viewfinder honest: every option has the same aspect ratio, so changing resolution changes the
+ * pixel count and nothing else. A list that mixed shapes is how the app came to ask for one the sensor
+ * does not stream and then draw the result in a box that did not match it.
+ */
+internal fun sameShapeSizes(advertised: List<Dimensions>): List<Dimensions> {
+    val largest = advertised.firstOrNull() ?: return listOf(1920 to 1080)
+    return advertised.filter { abs(it.aspect - largest.aspect) < ASPECT_TOLERANCE }
+}
+
+/**
+ * The size to stream at, given what was asked for.
+ *
+ * A request the camera does not advertise in its own shape is not honoured — it resolves to the
+ * largest option up to 1080p, which is what three simultaneous streams reliably manage.
+ */
+internal fun chooseSize(advertised: List<Dimensions>, requested: Dimensions?): Dimensions {
+    val options = sameShapeSizes(advertised)
+    return options.firstOrNull { it == requested }
+        ?: options.firstOrNull { it.width <= DEFAULT_MAX_WIDTH }
+        ?: options.lastOrNull()
+        ?: (1920 to 1080)
+}
+
 /** Diagonal of a 36x24mm full-frame sensor, used for 35mm-equivalent focal lengths. */
 private const val FULL_FRAME_DIAGONAL_MM = 43.2666f
 
@@ -47,30 +94,37 @@ data class CameraDescriptor(
 
     fun maxFps(size: Size): Int = maxFpsForSize[size] ?: 30
 
-    /**
-     * The size to record and preview at. Not configurable, on purpose.
-     *
-     * The shape is the sensor's own: whatever the largest size the camera advertises is shaped like,
-     * every size used here is shaped like too, so the viewfinder can simply take the frames' aspect
-     * ratio and be right. Offering a list to pick from is what let the app ask for a shape the sensor
-     * does not produce, and then draw the result in a box that did not match it.
-     *
-     * Within that shape it prefers something around 1080p: three simultaneous streams at the sensor's
-     * full size is what most devices refuse.
-     */
-    val videoSize: Size
-        get() {
-            val largest = videoSizes.firstOrNull() ?: return Size(1920, 1080)
-            val nativeAspect = largest.width.toFloat() / largest.height.toFloat()
-            val sameShape = videoSizes.filter {
-                abs(it.width.toFloat() / it.height.toFloat() - nativeAspect) < 0.02f
-            }
-            return sameShape.firstOrNull { it.width <= 1920 } ?: sameShape.lastOrNull() ?: largest
-        }
-
+    /** Frame rates that can be paired with [size]: the advertised ones this size can keep up with. */
     fun fpsOptionsFor(size: Size): List<Int> {
         val cap = maxFps(size)
         return availableFps.filter { it <= cap }.ifEmpty { listOf(minOf(30, cap)) }
+    }
+
+    /**
+     * The sizes worth offering: every size the camera advertises in the shape the sensor produces,
+     * largest first.
+     *
+     * The shape is deliberately fixed — the largest advertised size defines it and only sizes matching
+     * it are listed. That is what keeps the viewfinder honest: every option here has the same aspect
+     * ratio, so changing resolution changes the pixel count and nothing else. The old resolution list
+     * mixed shapes, which is how the app came to ask for one the sensor does not stream and then draw
+     * the result in a box that did not match it.
+     */
+    val videoSizeOptions: List<Size>
+        get() = sameShapeSizes(videoSizes.map { it.width to it.height }).map { Size(it.first, it.second) }
+
+    /**
+     * The size to actually use, given what was asked for.
+     *
+     * A request that is not one of [videoSizeOptions] is not honoured — it resolves to the largest
+     * option up to 1080p, which is what three simultaneous streams reliably manage.
+     */
+    fun videoSizeFor(requested: Size?): Size {
+        val chosen = chooseSize(
+            advertised = videoSizes.map { it.width to it.height },
+            requested = requested?.let { it.width to it.height },
+        )
+        return Size(chosen.first, chosen.second)
     }
 
     /**

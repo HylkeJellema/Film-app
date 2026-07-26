@@ -82,6 +82,14 @@ data class AppSettings(
     val zoomRatio: Float = 1f,
 
     // ---- Video format ----
+
+    /**
+     * Requested recording size. Zero means "let the camera decide", which lands on the largest size it
+     * offers up to 1080p. Anything the camera does not advertise in its own shape resolves to the same,
+     * so a stale or nonsense request can never put a shape on screen that the sensor does not stream.
+     */
+    val requestedWidthPx: Int = 0,
+    val requestedHeightPx: Int = 0,
     val fps: Int = 60,
     val bitrateMbps: Int = 40,
     val codec: VideoCodecOption = VideoCodecOption.H264,
@@ -116,6 +124,14 @@ data class AppSettings(
     val dimScreenWhenArmed: Boolean = true,
 ) {
     val bitrateBps: Int get() = bitrateMbps * 1_000_000
+    /** The requested size, or null when the camera should choose. */
+    val requestedSize: android.util.Size?
+        get() = if (requestedWidthPx > 0 && requestedHeightPx > 0) {
+            android.util.Size(requestedWidthPx, requestedHeightPx)
+        } else {
+            null
+        }
+
     val preRollUs: Long get() = (preRollSec * 1_000_000f).toLong()
     val postRollUs: Long get() = (postRollSec * 1_000_000f).toLong()
     val maxClipUs: Long get() = (maxClipSec * 1_000_000f).toLong()

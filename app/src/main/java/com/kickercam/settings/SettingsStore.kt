@@ -22,6 +22,8 @@ class SettingsStore(private val context: Context) {
         val cameraId = stringPreferencesKey("camera_id")
         val zoomRatio = floatPreferencesKey("zoom_ratio")
         val fps = intPreferencesKey("fps")
+        val requestedWidth = intPreferencesKey("requested_width_px")
+        val requestedHeight = intPreferencesKey("requested_height_px")
         val bitrateMbps = intPreferencesKey("bitrate_mbps")
         val codec = stringPreferencesKey("codec")
         val audioEnabled = booleanPreferencesKey("audio_enabled")
@@ -56,6 +58,8 @@ class SettingsStore(private val context: Context) {
             cameraId = p[Keys.cameraId],
             zoomRatio = p[Keys.zoomRatio] ?: d.zoomRatio,
             fps = p[Keys.fps] ?: d.fps,
+            requestedWidthPx = p[Keys.requestedWidth] ?: d.requestedWidthPx,
+            requestedHeightPx = p[Keys.requestedHeight] ?: d.requestedHeightPx,
             bitrateMbps = p[Keys.bitrateMbps] ?: d.bitrateMbps,
             codec = p[Keys.codec]?.let { runCatching { VideoCodecOption.valueOf(it) }.getOrNull() } ?: d.codec,
             audioEnabled = p[Keys.audioEnabled] ?: d.audioEnabled,
@@ -92,6 +96,8 @@ class SettingsStore(private val context: Context) {
             s.cameraId?.let { p[Keys.cameraId] = it } ?: p.remove(Keys.cameraId)
             p[Keys.zoomRatio] = s.zoomRatio
             p[Keys.fps] = s.fps
+            p[Keys.requestedWidth] = s.requestedWidthPx
+            p[Keys.requestedHeight] = s.requestedHeightPx
             p[Keys.bitrateMbps] = s.bitrateMbps
             p[Keys.codec] = s.codec.name
             p[Keys.audioEnabled] = s.audioEnabled

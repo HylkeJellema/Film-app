@@ -86,12 +86,20 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
     fun descriptorForCurrentLens(): CameraDescriptor? =
         capabilities.descriptor(_settings.value.cameraId ?: capabilities.defaultCameraId)
 
-    /** The size the current camera will actually stream at. Chosen by the camera, not the user. */
-    fun videoSize(): Size = descriptorForCurrentLens()?.videoSize ?: Size(1920, 1080)
+    /** Every size this camera offers in its own shape, largest first. */
+    fun videoSizeOptions(): List<Size> = descriptorForCurrentLens()?.videoSizeOptions ?: emptyList()
+
+    /** The size the current camera will actually stream at, given what is requested. */
+    fun videoSize(): Size =
+        descriptorForCurrentLens()?.videoSizeFor(_settings.value.requestedSize) ?: Size(1920, 1080)
+
+    /** Frame rates this camera can pair with [size], for showing next to each option. */
+    fun fpsOptionsFor(size: Size): List<Int> =
+        descriptorForCurrentLens()?.fpsOptionsFor(size) ?: listOf(30)
 
     fun availableFps(): List<Int> {
         val descriptor = descriptorForCurrentLens() ?: return listOf(30)
-        return descriptor.fpsOptionsFor(descriptor.videoSize)
+        return descriptor.fpsOptionsFor(descriptor.videoSizeFor(_settings.value.requestedSize))
     }
 
     fun estimatedBufferBytes(): Long =
@@ -155,7 +163,12 @@ class CameraViewModel(application: Application) : AndroidViewModel(application) 
         var s = input.copy(cameraId = cameraId)
 
         if (descriptor != null) {
-            val fpsChoices = descriptor.fpsOptionsFor(descriptor.videoSize)
+            // Snap the request to something this camera actually offers, so nothing downstream has to
+            // cope with a size it does not stream.
+            val size = descriptor.videoSizeFor(s.requestedSize)
+            s = s.copy(requestedWidthPx = size.width, requestedHeightPx = size.height)
+
+            val fpsChoices = descriptor.fpsOptionsFor(size)
             val fps = fpsChoices.filter { it <= s.fps }.maxOrNull()
                 ?: fpsChoices.minOrNull()
                 ?: 30

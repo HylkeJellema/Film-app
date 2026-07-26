@@ -195,6 +195,8 @@ class CaptureEngine(
 
     private fun requiresRebuild(a: AppSettings, b: AppSettings): Boolean =
         a.cameraId != b.cameraId ||
+            a.requestedWidthPx != b.requestedWidthPx ||
+            a.requestedHeightPx != b.requestedHeightPx ||
             a.fps != b.fps ||
             a.bitrateMbps != b.bitrateMbps ||
             a.codec != b.codec ||
@@ -321,39 +323,41 @@ class CaptureEngine(
      * to configure. The user's request is honoured first; each fallback gives up as little as possible.
      */
     private fun buildPlan(descriptor: CameraDescriptor): Plan {
-        val supported = descriptor.videoSizes
-        val size = descriptor.videoSize
+        val size = descriptor.videoSizeFor(settings.requestedSize)
         val fps = settings.fps.coerceAtMost(descriptor.maxFps(size))
 
         return when (fallbackAttempt) {
             0 -> Plan(size, fps, useAnalysisStream = true, note = null)
 
+            // Every option is the same shape as this one, so stepping down changes the pixel count
+            // and nothing the viewfinder can see.
             1 -> {
-                // Three simultaneous streams is the usual sticking point; step down within the same
-                // shape so the viewfinder's proportions do not change under the user.
-                val aspect = size.width.toFloat() / size.height.toFloat()
-                val smaller = supported.firstOrNull {
-                    it.width <= 1280 &&
-                        kotlin.math.abs(it.width.toFloat() / it.height.toFloat() - aspect) < 0.02f
-                } ?: size
-                Plan(
-                    smaller,
-                    settings.fps.coerceAtMost(descriptor.maxFps(smaller)),
-                    useAnalysisStream = true,
-                    note = "Dropped to ${smaller.width}x${smaller.height} — this lens cannot run " +
-                        "preview, recording and detection together at ${size.width}x${size.height}.",
-                )
+                val smaller = descriptor.videoSizeOptions.firstOrNull { it.width < size.width }
+                if (smaller == null) {
+                    droppedDetectionPlan(size, fps)
+                } else {
+                    Plan(
+                        smaller,
+                        settings.fps.coerceAtMost(descriptor.maxFps(smaller)),
+                        useAnalysisStream = true,
+                        note = "Dropped to ${smaller.width}x${smaller.height} — this lens cannot run " +
+                            "preview, recording and detection together at ${size.width}x${size.height}.",
+                    )
+                }
             }
 
-            else -> Plan(
-                size,
-                fps,
-                useAnalysisStream = false,
-                note = "Automatic detection is off: this lens cannot run a third stream. " +
-                    "Use the manual capture button.",
-            )
+            // Detection is the third stream, so giving it up is what buys back the full resolution.
+            else -> droppedDetectionPlan(size, fps)
         }
     }
+
+    private fun droppedDetectionPlan(size: Size, fps: Int) = Plan(
+        size,
+        fps,
+        useAnalysisStream = false,
+        note = "Automatic detection is off: this lens cannot run a third stream at " +
+            "${size.width}x${size.height}. Use the manual capture button, or pick a smaller size.",
+    )
 
     private fun startStatusTicker() {
         statusTicker?.cancel()

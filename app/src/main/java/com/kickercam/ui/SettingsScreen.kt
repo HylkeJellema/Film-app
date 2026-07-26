@@ -1,6 +1,7 @@
 package com.kickercam.ui
 
 import androidx.compose.foundation.background
+import android.util.Size
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -129,15 +130,34 @@ private fun LensSection(viewModel: CameraViewModel, settings: AppSettings) {
 
 @Composable
 private fun VideoSection(viewModel: CameraViewModel, settings: AppSettings) {
-    val fpsOptions = remember(settings.cameraId) { viewModel.availableFps() }
-    val size = remember(settings.cameraId) { viewModel.videoSize() }
+    val sizeOptions = remember(settings.cameraId) { viewModel.videoSizeOptions() }
+    val size = remember(settings.cameraId, settings.requestedWidthPx, settings.requestedHeightPx) {
+        viewModel.videoSize()
+    }
+    val fpsOptions = remember(settings.cameraId, size) { viewModel.availableFps() }
 
     Section("Video") {
         Label("Resolution")
+        ChipRow(
+            items = sizeOptions,
+            isSelected = { it.width == size.width && it.height == size.height },
+            label = { option ->
+                val maxFps = viewModel.fpsOptionsFor(option).maxOrNull() ?: 30
+                "${resolutionName(option)} · ${maxFps}fps"
+            },
+            onSelect = { chosen ->
+                viewModel.update {
+                    it.copy(requestedWidthPx = chosen.width, requestedHeightPx = chosen.height)
+                }
+            },
+        )
         Text(
-            "${size.width}x${size.height} — the camera's own, so the viewfinder and the clip are the " +
-                "shape the sensor produces. Not a choice: picking a shape the sensor does not stream " +
-                "is what left the preview stretched.",
+            "${size.width}x${size.height}. Every option is the shape the sensor produces, so choosing " +
+                "one changes the pixel count and nothing else — the viewfinder cannot end up a " +
+                "different shape from the recording. Above 1080p the camera may not manage preview, " +
+                "recording and detection at once; if it cannot, the app steps down a size, and if that " +
+                "is not enough it keeps your resolution and turns detection off, telling you so. " +
+                "Raise the bitrate with the resolution: 4K wants 60-100 Mbps.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -496,6 +516,16 @@ private fun AboutSection(descriptor: com.kickercam.camera.CameraDescriptor?) {
 }
 
 // ---------------------------------------------------------------------- building blocks
+
+/** Shorthand every phone camera menu uses, so the numbers are recognisable. */
+private fun resolutionName(size: Size): String = when {
+    size.width >= 7680 -> "8K"
+    size.width >= 3840 -> "4K"
+    size.width >= 2560 -> "1440p"
+    size.width >= 1920 -> "1080p"
+    size.width >= 1280 -> "720p"
+    else -> "${size.width}x${size.height}"
+}
 
 @Composable
 private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {

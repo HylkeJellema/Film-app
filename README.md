@@ -162,11 +162,17 @@ lively, lower the sensitivity or shrink the box.
   device never advertised; the HAL substitutes whatever it does have, and a stream of one shape drawn
   in a view of another is a stretched picture that no amount of layout fixes.
 
-- **The resolution is not configurable.** It is the camera's own: the largest size it advertises
-  decides the shape, and the app takes the biggest size of that shape up to 1080p, since three
-  simultaneous streams at a sensor's full size is what most devices refuse. Offering a list to choose
-  from is what let the app ask for a shape the sensor does not stream and then draw the result in a
-  box that did not match it.
+- **The resolution list only ever offers one shape.** The largest size the camera advertises defines
+  the sensor's shape, and only sizes matching it are listed — so choosing 4K instead of 1080p changes
+  the pixel count and nothing else, and the viewfinder cannot end up a different shape from the
+  recording. A request the camera does not advertise in that shape is refused rather than passed
+  through, and resolves to the largest option up to 1080p. The old list mixed shapes, which is how the
+  app came to ask for one the sensor does not stream.
+
+  Above 1080p a camera may not manage preview, recording and detection at once. If configuration
+  fails the app steps down one size, and if that is still too much it keeps the resolution and turns
+  detection off, saying so on screen rather than failing silently. Bitrate does not follow the
+  resolution automatically — 4K wants 60-100 Mbps where 1080p is happy at 40.
 
   Deriving the rotation from `SENSOR_ORIENTATION` and the display or the accelerometer was tried at
   length and produced, in turn, a stretched preview, a preview a quarter turn out, and one clamped
